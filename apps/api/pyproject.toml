@@ -22,11 +22,14 @@ dev = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
-testpaths = ["health", "../../libs/modules/access/access"]
+testpaths = ["health", "academic", "../../libs/modules/access/access"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+
+[tool.ruff.lint]
+ignore = ["RUF012"]
 
 [tool.uv.sources]
 outcometrik-access = { path = "../../libs/modules/access", editable = true }

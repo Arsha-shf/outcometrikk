@@ -139,26 +139,22 @@ export async function createAccount(body: AccountInput) {
   if (!isUser(data)) throw new ApiError('unexpected', 201);
   return data;
 }
-export async function createScope(body: {
-  label: string;
-  kind: string;
-  parent: string;
-}) {
-  const data = await request('/api/access/scopes/', { method: 'POST', body });
-  if (!isScope(data)) throw new ApiError('unexpected', 201);
-  return data;
-}
 export async function assignAccess(body: {
   user: number;
   scope: string;
   role?: string;
   capability?: string;
+  capabilities?: string[];
 }) {
   const data = await request('/api/access/assignments/', {
     method: 'POST',
     body,
   });
-  if (!isRecord(data) || typeof data.id !== 'string')
+  if (
+    !isRecord(data) ||
+    !(typeof data.id === 'string' ||
+      (Array.isArray(data.ids) && data.ids.every((id) => typeof id === 'string')))
+  )
     throw new ApiError('unexpected', 201);
 }
 export async function revokeAccess(kind: 'roles' | 'grants', id: string) {

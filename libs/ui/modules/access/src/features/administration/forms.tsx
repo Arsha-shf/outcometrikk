@@ -16,6 +16,7 @@ import {
   FieldGroup,
   FieldLabel,
   Input,
+  MultiSelectCombobox,
   NativeSelect,
   NativeSelectOption,
   Separator,
@@ -25,7 +26,6 @@ import {
   assignAccess,
   activateAccount,
   createAccount,
-  createScope,
   revokeAccess,
   type Dashboard,
   type Person,
@@ -190,102 +190,15 @@ export function AccountForm({
           <Alert>
             <AlertTitle>Set up a course offering first</AlertTitle>
             <AlertDescription>
-              Student and instructor accounts need a course offering. Add a
-              program and offering from Programs & offerings.
+              Student and instructor accounts need an academic offering. Create
+              academic records through `/api/v1`; their access scopes will
+              appear here automatically.
             </AlertDescription>
           </Alert>
         )}
         {create.isError && <FormError error={create.error} />}
         <Button type="submit" disabled={create.isPending || !selectedRole}>
           {create.isPending ? 'Creating account…' : 'Create account →'}
-        </Button>
-      </FieldGroup>
-    </form>
-  );
-}
-export function ScopeForm({
-  data,
-  onSaved,
-}: {
-  data: Dashboard;
-  onSaved: () => void;
-}) {
-  const [kind, setKind] = useState('program');
-  const [parentId, setParentId] = useState(data.scope_id);
-  const parents = data.scopes.filter(
-    (s) => s.kind === (kind === 'program' ? 'institution' : 'program'),
-  );
-  const selectedParent =
-    parents.find((s) => s.id === parentId)?.id ?? parents[0]?.id ?? '';
-  const create = useMutation({ mutationFn: createScope, onSuccess: onSaved });
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    create.mutate({
-      label: String(form.get('label')),
-      kind,
-      parent: selectedParent,
-    });
-  }
-  return (
-    <form onSubmit={submit}>
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="scope-type">Type</FieldLabel>
-          <NativeSelect
-            id="scope-type"
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
-          >
-            <NativeSelectOption value="program">Program</NativeSelectOption>
-            <NativeSelectOption value="offering">
-              Course offering
-            </NativeSelectOption>
-          </NativeSelect>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="scope-name">Name</FieldLabel>
-          <Input
-            id="scope-name"
-            name="label"
-            required
-            maxLength={160}
-            placeholder={
-              kind === 'program'
-                ? 'e.g. Computer Engineering'
-                : 'e.g. CSE 301 · Fall 2026'
-            }
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="scope-parent">
-            {kind === 'program' ? 'Institution' : 'Program'}
-          </FieldLabel>
-          <NativeSelect
-            id="scope-parent"
-            value={selectedParent}
-            onChange={(e) => setParentId(e.target.value)}
-            required
-          >
-            {parents.map((s) => (
-              <NativeSelectOption key={s.id} value={s.id}>
-                {s.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </Field>
-        {!selectedParent && (
-          <Alert>
-            <AlertDescription>
-              Create a program before adding a course offering.
-            </AlertDescription>
-          </Alert>
-        )}
-        {create.isError && <FormError error={create.error} />}
-        <Button type="submit" disabled={create.isPending || !selectedParent}>
-          {create.isPending
-            ? 'Saving…'
-            : `Add ${kind === 'program' ? 'program' : 'course offering'} →`}
         </Button>
       </FieldGroup>
     </form>
@@ -305,15 +218,20 @@ export function AccessForm({
   );
   const [kind, setKind] = useState('role');
   const [selection, setSelection] = useState('');
-  const roles = data.roles.filter(
-    (r) => r.scope_kind === data.scopes.find((s) => s.id === scopeId)?.kind,
-  );
-  const options =
-    kind === 'role'
-      ? roles.map((r) => ({ id: r.slug, label: r.name }))
-      : data.capabilities.map((c) => ({ id: c, label: c }));
+  const [selectedCapabilities, setSelectedCapabilities] = useState<string[]>([]);
+  const scope = data.scopes.find((s) => s.id === scopeId);
+  const options = data.roles.map((r) => ({ id: r.slug, label: r.name }));
   const selected =
-    options.find((o) => o.id === selection)?.id ?? options[0]?.id ?? '';
+    options.find((o) => o.id === selection)?.id ??
+    data.roles.find((role) => role.scope_kind === scope?.kind)?.slug ??
+    options[0]?.id ??
+    '';
+  const selectedRole = data.roles.find((role) => role.slug === selected);
+  const roleForAssignment = data.roles.find((role) => role.slug === selected);
+  const canAssign =
+    kind === 'capability'
+      ? selectedCapabilities.length > 0
+      : roleForAssignment?.scope_kind === scope?.kind;
   const add = useMutation({ mutationFn: assignAccess, onSuccess: onSaved });
   const revoke = useMutation({
     mutationFn: ({ kind, id }: { kind: 'roles' | 'grants'; id: string }) =>
@@ -405,13 +323,15 @@ export function AccessForm({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          add.mutate({
-            user: person.id,
-            scope: scopeId,
-            ...(kind === 'role'
-              ? { role: selected }
-              : { capability: selected }),
-          });
+          if (kind === 'role') {
+            add.mutate({ user: person.id, scope: scopeId, role: selected });
+          } else {
+            add.mutate({
+              user: person.id,
+              scope: scopeId,
+              capabilities: selectedCapabilities,
+            });
+          }
         }}
       >
         <FieldGroup>
@@ -420,7 +340,19 @@ export function AccessForm({
             <NativeSelect
               id="access-scope"
               value={scopeId}
-              onChange={(e) => setScopeId(e.target.value)}
+              onChange={(e) => {
+                const nextScopeId = e.target.value;
+                setScopeId(nextScopeId);
+                if (kind === 'role') {
+                  const nextScope = data.scopes.find(
+                    (item) => item.id === nextScopeId,
+                  );
+                  const compatibleRole = data.roles.find(
+                    (role) => role.scope_kind === nextScope?.kind,
+                  );
+                  if (compatibleRole) setSelection(compatibleRole.slug);
+                }
+              }}
             >
               {data.scopes.map((s) => (
                 <NativeSelectOption key={s.id} value={s.id}>
@@ -446,29 +378,59 @@ export function AccessForm({
             <FieldLabel htmlFor="access-selection">
               {kind === 'role' ? 'Role' : 'Capability'}
             </FieldLabel>
-            <NativeSelect
-              id="access-selection"
-              required
-              value={selected}
-              onChange={(e) => setSelection(e.target.value)}
-            >
-              {options.map((o) => (
-                <NativeSelectOption key={o.id} value={o.id}>
-                  {o.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            {kind === 'role' ? (
+              <NativeSelect
+                id="access-selection"
+                required
+                value={selected}
+                onChange={(e) => {
+                  setSelection(e.target.value);
+                  const role = data.roles.find(
+                    (item) => item.slug === e.target.value,
+                  );
+                  const compatibleScope = data.scopes.find(
+                    (item) => item.kind === role?.scope_kind,
+                  );
+                  if (compatibleScope) setScopeId(compatibleScope.id);
+                }}
+              >
+                {options.map((o) => (
+                  <NativeSelectOption key={o.id} value={o.id}>
+                    {o.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            ) : (
+              <MultiSelectCombobox
+                id="access-selection"
+                label="Capabilities"
+                placeholder="Choose one or more capabilities…"
+                searchPlaceholder="Search capabilities…"
+                options={data.capabilities.map((capability) => ({
+                  value: capability,
+                  label: capability,
+                }))}
+                value={selectedCapabilities}
+                onChange={setSelectedCapabilities}
+              />
+            )}
             {kind === 'capability' && (
               <FieldDescription>
-                A direct grant applies only to this capability in this exact
-                scope.
+                Each selected capability is granted only in this exact scope.
+                You can assign more than one capability at a time.
+              </FieldDescription>
+            )}
+            {kind === 'role' && selectedRole && scope && !canAssign && (
+              <FieldDescription>
+                {selectedRole.name} must be assigned to a{' '}
+                {selectedRole.scope_kind} scope. Choose a matching scope.
               </FieldDescription>
             )}
           </Field>
           {(add.isError || revoke.isError) && (
             <FormError error={add.error ?? revoke.error} />
           )}
-          <Button type="submit" disabled={pending || !selected}>
+          <Button type="submit" disabled={pending || !selected || !canAssign}>
             {pending ? 'Updating access…' : 'Assign access →'}
           </Button>
         </FieldGroup>
