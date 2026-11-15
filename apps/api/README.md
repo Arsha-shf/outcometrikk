@@ -101,8 +101,8 @@ Verification:
 
 ```sh
 DJANGO_SECRET_KEY=test DJANGO_DB_ENGINE=django.db.backends.sqlite3 uv run pytest
-uv run ruff check . ../../libs/modules/access
-uv run ruff format --check . ../../libs/modules/access
+uv run ruff check . ../../libs/modules/access ../../libs/modules/calc
+uv run ruff format --check . ../../libs/modules/access ../../libs/modules/calc
 uv run python manage.py makemigrations --check --dry-run
 uv run python manage.py check
 ```
