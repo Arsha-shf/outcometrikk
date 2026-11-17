@@ -20,6 +20,32 @@ so Django connects to PostgreSQL on `localhost`. The database and Redis ports
 bind to `127.0.0.1`; persistent database data uses the `postgres-data` volume.
 Stop the services with `docker compose -f infra/compose.dependencies.yaml down`.
 
+## Demo data and login
+
+With the local database running, migrate and seed it from the host:
+
+```sh
+./tools/manage-api.sh migrate
+./tools/manage-api.sh seed_acibadem
+```
+
+The command writes generated login credentials to the repository-root
+`seeded_creentials.json` (the spelling is intentional for compatibility). Open
+that file and use `demo.admin` or `demo.institution.admin` at `/login`; other
+accounts let you explore coordinator, instructor and student workspaces. The
+file is ignored by Git and should be kept private. The seed reuses its passwords
+on subsequent runs. Keep the file with the database: if it is lost or does not
+match existing demo users, the command refuses to change those users' passwords.
+Use a fresh local database and a new credentials file to generate new accounts.
+
+To give an existing active local user access to the seeded institution, run
+`./tools/manage-api.sh seed_acibadem --administrator USERNAME`. Select Acıbadem
+in the institution dashboard if the user has access to multiple institutions.
+An administrator created by `bootstrap_access` belongs to its own institution;
+staff or superuser status alone does not grant access to the demo institution.
+The seed is restricted to DEBUG and a local database. It creates sample academic
+and gradebook data, not a complete set of every downstream dashboard workflow.
+
 The only health endpoint is `/api/health/status`. It returns only `{ "status": "ok" }` or `{ "status": "unavailable" }`; dependency details are intentionally not exposed. For isolated local tests without PostgreSQL, set `DJANGO_DB_ENGINE=django.db.backends.sqlite3`.
 
 ## Scoped authorization (AUTH-01)
@@ -194,6 +220,56 @@ Rules:
 
 Downstream stories should read rosters through `academic.selectors.eligible_roster(offering)`.
 
+## Gradebook API (GRD-01)
+
+The gradebook uses authenticated, paginated endpoints under `/api/v1/`. The
+client must send the session cookie and CSRF token for writes. Offering,
+assessment, enrollment, batch, and grade IDs are UUIDs. List endpoints support
+`page` and `page_size` as described above.
+
+| Route | Operations | Filters |
+|---|---|---|
+| `/assessments/` | GET list and `{id}` | `offering` |
+| `/grade-batches/` | GET, POST; GET `{id}`; POST `{id}/release/` | `offering` |
+| `/grades/` | GET, POST; GET/PATCH `{id}`; GET `{id}/history/` | `offering`, `enrollment`, `assessment`, `batch`, `state` |
+
+Assessment reads return approved assessments for offerings where the actor has
+`grades.edit`; assessment authoring is not provided here. Create a batch with
+`{"offering": "<offering UUID>", "name": "Midterm"}`. To record a grade, POST
+`{"enrollment": "<UUID>", "assessment": "<UUID>", "batch": "<UUID>",
+"state": "scored", "points_earned": "8.00"}`. `points_earned` uses decimal
+values with at most two fractional digits, and must be between zero and the assessment's
+points possible. For `missing`, `exempt`, `withdrawn`, or `incomplete`, omit the
+points or send `null`; zero remains an actual score. Each enrollment and assessment
+pair has at most one grade. An active enrollment, approved assessment and batch
+must all refer to the same offering.
+
+To correct a grade, PATCH its detail route with `expected_version`, `state`,
+`points_earned` where applicable, and `reason`. The initial version is 1; each
+actual change advances it. A stale version returns HTTP 409 with
+`{"code": "version_conflict", "detail": "...", "current_version": <number>}`;
+reload the current grade before retrying. A correction with the same state and
+points is a no-op and does not append history. History returns versions with the
+old and new state and points, actor, reason, and creation time. Grade creation
+and changes write their history within the same transaction. After a batch has
+been released, entering or correcting a grade requires a nonblank reason.
+
+Only staff with `grades.edit` for an offering can access its gradebook, batches,
+assessment choices and history, and enter, correct or release grades. Students
+can read only their own grades in released batches; history and writes are not
+student operations. Forbidding a visible action returns 403; a record outside a
+scoped detail queryset returns 404. Validation failures return 400.
+
+For downstream integrations, grade records snapshot `points_possible` at
+creation, rather than following later assessment changes. Post-release grade
+writes increment the program and offering `input_revision`; consumers can use
+`academic.selectors.input_revision(offering)` to compare current inputs with a
+stored calculation revision. This repository does not yet provide a publication
+model or automatically mark publications stale: downstream publication work
+must persist and compare those revisions. The local `Assessment` is a CUR-01
+stub (offering, title, points possible and approval status); migration to a
+versioned syllabus and its compatibility are not yet implemented or verified.
+
 ## Role workspaces
 
 `GET /api/auth/session/` includes active role assignments with their scope. The web home page
@@ -206,7 +282,9 @@ admin, coordinator, instructor, then student.
   rosters. An exact `grades.view` grant can add its named offering.
 - `GET /api/v1/workspaces/student/` returns only the signed-in student's own enrollments.
 
-These responses use `Cache-Control: no-store`. Gradebook and published PO records are not yet part
-of the academic schema; the student workspace reports no published outcomes until those records
-are implemented. The instructor workspace currently provides the assigned course roster, not grade
-entry.
+These responses use `Cache-Control: no-store`. The instructor workspace provides the assigned
+course roster and the gradebook UI. Approved assessments are read-only through
+`GET /api/v1/assessments/?offering={id}` and are visible only to staff with `grades.edit` on that
+offering; assessment authoring remains part of the curriculum workflow. Grade and batch endpoints
+support entry, versioned corrections, history, and release. Student grade queries return only that
+student's released grades. Published PO profiles are still provided by a downstream workflow.
