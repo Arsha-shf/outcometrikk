@@ -1,6 +1,6 @@
+from ..access_control import OfferingAuthorization
 from ..models import Assessment
 from .base import AcademicService
-from .grades import _editable_offering_ids
 
 
 class AssessmentService(AcademicService):
@@ -16,5 +16,7 @@ class AssessmentService(AcademicService):
         )
         return queryset.filter(
             status=Assessment.Status.APPROVED,
-            offering_id__in=_editable_offering_ids(self.actor, candidates),
+            offering_id__in=OfferingAuthorization.editable_ids(
+                actor=self.actor, candidate_ids=candidates
+            ),
         )

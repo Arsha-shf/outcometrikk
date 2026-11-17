@@ -1,12 +1,13 @@
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from ..access_control import require
-from ..models import Assessment, Enrollment, Grade, GradeBatch, GradeHistory
+from ..access_control import OfferingAuthorization, require
+from ..models import Enrollment, Grade, GradeBatch, GradeHistory
 from .base import AcademicService
-from .offerings import bump_revisions
+from .grade_validation import GradeValidator
+from .revisions import RevisionTracker
 
 GRADE_EDIT = "grades.edit"
 
@@ -17,45 +18,15 @@ class GradeVersionConflict(Exception):
         self.current_version = current_version
 
 
-def _editable_offering_ids(actor, candidate_ids):
-    allowed = set()
-    for offering_id in candidate_ids:
-        try:
-            require(actor, GRADE_EDIT, offering_id)
-        except PermissionDenied:
-            continue
-        allowed.add(offering_id)
-    return allowed
-
-
-def _check_value(state, points, points_possible):
-    if state == Grade.State.SCORED:
-        if points is None:
-            raise ValidationError({"points_earned": "Required when the grade is scored."})
-        if points < 0 or points > points_possible:
-            raise ValidationError({"points_earned": f"Must be between 0 and {points_possible}."})
-    elif points is not None:
-        raise ValidationError({"points_earned": "Must be empty unless the grade is scored."})
-
-
-def _check_context(enrollment, assessment, batch):
-    if enrollment.status != Enrollment.Status.ENROLLED:
-        raise ValidationError("The enrollment is not active.")
-    if assessment.offering_id != enrollment.offering_id:
-        raise ValidationError({"assessment": "This assessment is not part of the offering."})
-    if assessment.status != Assessment.Status.APPROVED:
-        raise ValidationError({"assessment": "This assessment is not approved."})
-    if batch.offering_id != enrollment.offering_id:
-        raise ValidationError({"batch": "This batch belongs to a different offering."})
-
-
 class GradeService(AcademicService):
     model = Grade
     immutable_fields = ("enrollment", "assessment", "batch")
 
     def visible_queryset(self, queryset):
         candidates = Grade.objects.values_list("offering_id", flat=True).distinct()
-        staff_offerings = _editable_offering_ids(self.actor, candidates)
+        staff_offerings = OfferingAuthorization.editable_ids(
+            actor=self.actor, candidate_ids=candidates
+        )
         return queryset.select_related("assessment", "batch").filter(
             Q(offering_id__in=staff_offerings)
             | Q(enrollment__student=self.actor, batch__released_at__isnull=False)
@@ -67,12 +38,21 @@ class GradeService(AcademicService):
     @transaction.atomic
     def create(self, *, enrollment, assessment, batch, state, points_earned=None, reason=""):
         require(self.actor, GRADE_EDIT, enrollment.offering_id)
+        # Serialize writes with release before deciding whether a reason is required.
+        batch = GradeBatch.objects.select_for_update().get(pk=batch.pk)
         enrollment = (
-            Enrollment.objects.select_for_update().select_related("offering").get(pk=enrollment.pk)
+            Enrollment.objects.select_for_update(of=("self",))
+            .select_related("offering")
+            .get(pk=enrollment.pk)
         )
-        batch = GradeBatch.objects.get(pk=batch.pk)
-        _check_context(enrollment, assessment, batch)
-        _check_value(state, points_earned, assessment.points_possible)
+        GradeValidator.validate(
+            enrollment=enrollment,
+            assessment=assessment,
+            batch=batch,
+            state=state,
+            points_earned=points_earned,
+            points_possible=assessment.points_possible,
+        )
 
         released = batch.released_at is not None
         if released and not reason.strip():
@@ -109,28 +89,40 @@ class GradeService(AcademicService):
             changed_by=self.actor,
         )
         if released:
-            bump_revisions(
+            RevisionTracker.bump(
                 program_id=enrollment.offering.program_id, offering_id=enrollment.offering_id
             )
         return grade
 
     @transaction.atomic
     def correct(self, *, grade, expected_version, state, points_earned=None, reason=""):
+        identity = Grade.objects.values("batch_id", "enrollment_id").get(pk=grade.pk)
+        # All grade mutations take locks in batch, enrollment, grade order.
+        batch = GradeBatch.objects.select_for_update().get(pk=identity["batch_id"])
+        enrollment = Enrollment.objects.select_for_update().get(pk=identity["enrollment_id"])
         locked = (
-            Grade.objects.select_for_update()
-            .select_related("offering", "enrollment", "assessment", "batch")
+            Grade.objects.select_for_update(of=("self",))
+            .select_related("offering", "assessment")
             .get(pk=grade.pk)
         )
+        if locked.batch_id != batch.pk or locked.enrollment_id != enrollment.pk:
+            raise ValidationError("The grade context changed; retry the operation.")
         require(self.actor, GRADE_EDIT, locked.offering_id)
         if locked.version != expected_version:
             raise GradeVersionConflict(locked.version)
-        _check_context(locked.enrollment, locked.assessment, locked.batch)
-        _check_value(state, points_earned, locked.points_possible)
+        GradeValidator.validate(
+            enrollment=enrollment,
+            assessment=locked.assessment,
+            batch=batch,
+            state=state,
+            points_earned=points_earned,
+            points_possible=locked.points_possible,
+        )
 
         if state == locked.state and points_earned == locked.points_earned:
             return locked  # no-op: no version bump, no history row
 
-        released = locked.batch.released_at is not None
+        released = batch.released_at is not None
         if released and not reason.strip():
             raise ValidationError({"reason": "A reason is required after release."})
 
@@ -150,7 +142,9 @@ class GradeService(AcademicService):
             changed_by=self.actor,
         )
         if released:
-            bump_revisions(program_id=locked.offering.program_id, offering_id=locked.offering_id)
+            RevisionTracker.bump(
+                program_id=locked.offering.program_id, offering_id=locked.offering_id
+            )
         return locked
 
     def history(self, *, grade):
@@ -164,7 +158,11 @@ class GradeBatchService(AcademicService):
 
     def visible_queryset(self, queryset):
         candidates = GradeBatch.objects.values_list("offering_id", flat=True).distinct()
-        return queryset.filter(offering_id__in=_editable_offering_ids(self.actor, candidates))
+        return queryset.filter(
+            offering_id__in=OfferingAuthorization.editable_ids(
+                actor=self.actor, candidate_ids=candidates
+            )
+        )
 
     def create_access(self, data):
         return GRADE_EDIT, data["offering"].pk
@@ -174,10 +172,19 @@ class GradeBatchService(AcademicService):
 
     @transaction.atomic
     def release(self, *, batch):
-        batch = GradeBatch.objects.select_for_update().get(pk=batch.pk)
+        batch = (
+            GradeBatch.objects.select_for_update(of=("self",))
+            .select_related("offering")
+            .get(pk=batch.pk)
+        )
         require(self.actor, GRADE_EDIT, batch.offering_id)
         if batch.released_at is None:
             batch.released_at = timezone.now()
             batch.released_by = self.actor
             batch.save()
+            # Previously private grades become eligible inputs when first released.
+            if Grade.objects.filter(batch=batch).exists():
+                RevisionTracker.bump(
+                    program_id=batch.offering.program_id, offering_id=batch.offering_id
+                )
         return batch

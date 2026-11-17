@@ -133,6 +133,7 @@ function GradeEntryRow({
         studentName,
       ),
   });
+  const scoreLimit = grade?.points_possible ?? pointsPossible;
   const batchIsReleased = Boolean(batch?.released_at);
   const correctionIsReleased = grade?.batch === batch?.id && batchIsReleased;
   const reasonRequired = Boolean(
@@ -182,7 +183,7 @@ function GradeEntryRow({
         <form onSubmit={submit} className="min-w-64 space-y-3">
           <Field>
             <FieldLabel htmlFor={`state-${enrollmentId}`}>
-              Grade state
+              Grade state for {studentName}
             </FieldLabel>
             <NativeSelect
               id={`state-${enrollmentId}`}
@@ -203,14 +204,14 @@ function GradeEntryRow({
           {state === 'scored' && (
             <Field>
               <FieldLabel htmlFor={`points-${enrollmentId}`}>
-                Points earned (out of {pointsPossible})
+                Points earned for {studentName} (out of {scoreLimit})
               </FieldLabel>
               <Input
                 id={`points-${enrollmentId}`}
                 type="number"
                 inputMode="decimal"
                 min="0"
-                max={pointsPossible}
+                max={scoreLimit}
                 step="0.01"
                 required
                 value={points}
@@ -439,8 +440,11 @@ export function InstructorGradebook({
       setGradeSaveMessage(`${action} for ${input.studentName}.`);
       await queryClient.invalidateQueries({ queryKey: boardKey });
     },
-    onError: (error) => {
+    onError: (error, input) => {
       if (error instanceof ApiError && error.kind === 'conflict') {
+        setGradeSaveMessage(
+          `${input.studentName}'s grade changed while you were editing it. Review the latest version before saving again.`,
+        );
         void queryClient.invalidateQueries({ queryKey: boardKey });
       }
     },
@@ -466,6 +470,7 @@ export function InstructorGradebook({
   if (session.isPending || (allowed && workspace.isPending)) {
     return (
       <main className="mx-auto max-w-6xl space-y-4 p-8" role="status">
+        <span className="sr-only">Loading gradebook…</span>
         <Skeleton className="h-12 w-72" />
         <Skeleton className="h-72 w-full" />
       </main>
@@ -537,6 +542,7 @@ export function InstructorGradebook({
                   value={offeringId}
                   onChange={(event) => {
                     setGradeSaveMessage('');
+                    setConfirmRelease(false);
                     setSelectedOffering(event.target.value);
                   }}
                   disabled={writesPending}
@@ -617,7 +623,10 @@ export function InstructorGradebook({
                       <NativeSelect
                         id="gradebook-batch"
                         value={selectedBatch?.id ?? ''}
-                        onChange={(event) => setBatchChoice(event.target.value)}
+                        onChange={(event) => {
+                          setConfirmRelease(false);
+                          setBatchChoice(event.target.value);
+                        }}
                         disabled={!batches.length || writesPending}
                       >
                         {batches.length ? (

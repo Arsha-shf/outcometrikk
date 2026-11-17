@@ -1,6 +1,11 @@
 import { ApiError, request, type Page } from '@outcometrik/api';
 
-export type GradeState = 'scored' | 'missing' | 'exempt' | 'withdrawn' | 'incomplete';
+export type GradeState =
+  | 'scored'
+  | 'missing'
+  | 'exempt'
+  | 'withdrawn'
+  | 'incomplete';
 
 export interface ApprovedAssessment {
   id: string;
@@ -64,7 +69,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isPage<T>(value: unknown, isRow: (row: unknown) => row is T): value is Page<T> {
+function isPage<T>(
+  value: unknown,
+  isRow: (row: unknown) => row is T,
+): value is Page<T> {
   return (
     isRecord(value) &&
     typeof value.count === 'number' &&
@@ -98,7 +106,9 @@ function isGradeBatch(value: unknown): value is GradeBatch {
 }
 
 function isGradeState(value: unknown): value is GradeState {
-  return ['scored', 'missing', 'exempt', 'withdrawn', 'incomplete'].includes(String(value));
+  return ['scored', 'missing', 'exempt', 'withdrawn', 'incomplete'].includes(
+    String(value),
+  );
 }
 
 function isGrade(value: unknown): value is GradeRecord {
@@ -124,19 +134,40 @@ function isHistoryEntry(value: unknown): value is GradeHistoryEntry {
     isRecord(value) &&
     typeof value.version === 'number' &&
     (value.old_state === '' || isGradeState(value.old_state)) &&
-    (typeof value.old_points_earned === 'string' || value.old_points_earned === null) &&
+    (typeof value.old_points_earned === 'string' ||
+      value.old_points_earned === null) &&
     isGradeState(value.new_state) &&
-    (typeof value.new_points_earned === 'string' || value.new_points_earned === null) &&
+    (typeof value.new_points_earned === 'string' ||
+      value.new_points_earned === null) &&
     typeof value.reason === 'string' &&
     (typeof value.changed_by === 'number' || value.changed_by === null) &&
     typeof value.created_at === 'string'
   );
 }
 
-function unwrapPage<T>(data: unknown, isRow: (row: unknown) => row is T): T[] {
-  if (Array.isArray(data) && data.every(isRow)) return data;
-  if (isPage(data, isRow)) return data.results;
-  throw new ApiError('unexpected', 200);
+async function requestAllPages<T>(
+  path: `/api/${string}`,
+  params: URLSearchParams,
+  signal: AbortSignal | undefined,
+  isRow: (row: unknown) => row is T,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let page = 1;
+  while (true) {
+    params.set('page', String(page));
+    const data: unknown = await request(`${path}?${params}`, {
+      signal,
+      cache: 'no-store',
+    });
+    if (Array.isArray(data) && data.every(isRow)) return [...rows, ...data];
+    if (!isPage(data, isRow)) throw new ApiError('unexpected', 200);
+    rows.push(...data.results);
+    if (!data.next) return rows;
+    // A malformed or inconsistent response must not cause an endless request loop.
+    if (!data.results.length || rows.length >= data.count)
+      throw new ApiError('unexpected', 200);
+    page += 1;
+  }
 }
 
 async function requestValidated<T>(
@@ -150,47 +181,52 @@ async function requestValidated<T>(
   return data;
 }
 
-export async function getApprovedAssessments(offering: string, signal?: AbortSignal) {
-  const query = new URLSearchParams({ offering, page_size: '200' });
-  const data: unknown = await request(`/api/v1/assessments/?${query}`, {
+export function getApprovedAssessments(offering: string, signal?: AbortSignal) {
+  return requestAllPages(
+    '/api/v1/assessments/',
+    new URLSearchParams({ offering, page_size: '200' }),
     signal,
-    cache: 'no-store',
-  });
-  return unwrapPage(data, isAssessment);
+    isAssessment,
+  );
 }
 
-export async function getGradeBatches(offering: string, signal?: AbortSignal) {
-  const query = new URLSearchParams({ offering, page_size: '200' });
-  const data: unknown = await request(`/api/v1/grade-batches/?${query}`, {
+export function getGradeBatches(offering: string, signal?: AbortSignal) {
+  return requestAllPages(
+    '/api/v1/grade-batches/',
+    new URLSearchParams({ offering, page_size: '200' }),
     signal,
-    cache: 'no-store',
-  });
-  return unwrapPage(data, isGradeBatch);
+    isGradeBatch,
+  );
 }
 
-export async function getGrades(offering: string, signal?: AbortSignal) {
-  const query = new URLSearchParams({ offering, page_size: '200' });
-  const data: unknown = await request(`/api/v1/grades/?${query}`, {
+export function getGrades(offering: string, signal?: AbortSignal) {
+  return requestAllPages(
+    '/api/v1/grades/',
+    new URLSearchParams({ offering, page_size: '200' }),
     signal,
-    cache: 'no-store',
-  });
-  return unwrapPage(data, isGrade);
+    isGrade,
+  );
 }
 
-export async function getReleasedStudentGrades(signal?: AbortSignal) {
-  const data: unknown = await request('/api/v1/grades/?page_size=200', {
+export function getReleasedStudentGrades(signal?: AbortSignal) {
+  return requestAllPages(
+    '/api/v1/grades/',
+    new URLSearchParams({ page_size: '200' }),
     signal,
-    cache: 'no-store',
-  });
-  return unwrapPage(data, isGrade);
+    isGrade,
+  );
 }
 
 export async function getGradeHistory(gradeId: string, signal?: AbortSignal) {
-  const data: unknown = await request(`/api/v1/grades/${encodeURIComponent(gradeId)}/history/`, {
-    signal,
-    cache: 'no-store',
-  });
-  if (!Array.isArray(data) || !data.every(isHistoryEntry)) throw new ApiError('unexpected', 200);
+  const data: unknown = await request(
+    `/api/v1/grades/${encodeURIComponent(gradeId)}/history/`,
+    {
+      signal,
+      cache: 'no-store',
+    },
+  );
+  if (!Array.isArray(data) || !data.every(isHistoryEntry))
+    throw new ApiError('unexpected', 200);
   return data;
 }
 
@@ -213,7 +249,12 @@ export function releaseGradeBatch(batchId: string) {
 }
 
 export function createGrade(input: GradeWrite) {
-  return requestValidated('/api/v1/grades/', { method: 'POST', body: input }, isGrade, 201);
+  return requestValidated(
+    '/api/v1/grades/',
+    { method: 'POST', body: input },
+    isGrade,
+    201,
+  );
 }
 
 export function correctGrade(gradeId: string, input: GradeCorrection) {

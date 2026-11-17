@@ -23,3 +23,7 @@ The gradebook consumes `GET /api/v1/assessments/?offering={id}`, grade-batch lis
 and grade list/create/correct/history endpoints. Approved assessments are visible only to staff
 with `grades.edit` on the offering. Student grade lists expose only released records for the
 signed-in student.
+
+For request and authorization details, see the [gradebook API contract](../../../../apps/api/README.md#gradebook-api-grd-01).
+The assessment model is currently a CUR-01 stub. Versioned syllabus integration and
+publication staleness remain downstream work; the UI does not implement them.

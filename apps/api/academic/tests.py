@@ -524,6 +524,32 @@ def test_invalid_values_fail_and_write_nothing(gb, state, points):
     assert Grade.objects.count() == 0
 
 
+def test_correction_uses_saved_points_limit_and_leaves_history_unchanged(gb):
+    grade = enter(gb)
+    gb["assessment"].points_possible = Decimal(20)
+    gb["assessment"].save()
+
+    with pytest.raises(ValidationError) as exc:
+        GradeService(actor=gb["teacher"]).correct(
+            grade=grade, expected_version=1, state="scored", points_earned=Decimal(11)
+        )
+
+    assert "points_earned" in exc.value.message_dict
+    grade.refresh_from_db()
+    assert grade.version == 1 and grade.history.count() == 1
+
+
+def test_foreign_batch_fails_before_grade_value_validation(gb):
+    other = make_offering(gb, section="02")
+    batch = GradeBatch.objects.create(offering=other, name="Other")
+
+    with pytest.raises(ValidationError) as exc:
+        enter(gb, batch=batch, points=Decimal(11))
+
+    assert "batch" in exc.value.message_dict
+    assert Grade.objects.count() == 0
+
+
 def test_inactive_enrollment_fails(gb):
     EnrollmentService(actor=gb["admin"]).update_status(
         enrollment=gb["enrollment"], status="withdrawn", reason="left"
