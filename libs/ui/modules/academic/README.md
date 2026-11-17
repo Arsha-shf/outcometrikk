@@ -4,6 +4,14 @@
 It uses the public session contract from `@outcometrik/access`, shared transport,
 and shared UI components.
 
+Institution administrators can create departments, programs, terms, courses,
+program-course links, offerings, program memberships, instructor assignments,
+and enrollments at `/admin/academic`. The screen calls the scoped academic API;
+the API remains authoritative for permissions, relationships, and roster rules.
+Create an approved program-course link before creating its offering. Create and
+activate student accounts in People & access before adding memberships and
+enrollments.
+
 The instructor dashboard at `/instructor` uses a workspace sidebar with overview and
 grades/roster operations. It shows assigned offerings and active roster counts; each
 offering opens its gradebook directly. The gradebook at `/instructor/gradebook` remains
@@ -27,3 +35,4 @@ signed-in student.
 For request and authorization details, see the [gradebook API contract](../../../../apps/api/README.md#gradebook-api-grd-01).
 The assessment model is currently a CUR-01 stub. Versioned syllabus integration and
 publication staleness remain downstream work; the UI does not implement them.
+

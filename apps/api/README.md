@@ -54,8 +54,11 @@ The `access` Django application in `libs/modules/access` follows `deep-research-
 identity, one server-side capability policy, scoped role assignments, exact-scope
 direct grants, filtered selectors, and transactional audits. Django staff and
 superuser flags do not confer domain access. JWT and external policy engines are
-outside this slice. The institution dashboard is available at `/admin`, with sign-in at `/login`.
-Academic/grade workflows remain separate from this administration surface.
+outside this slice. The institution dashboard is available at `/admin`, academic
+catalog setup at `/admin/academic`, with sign-in at `/login`. The academic UI
+uses scoped `/api/v1` endpoints; authorization, relationship checks, and roster
+validation remain server-side. Grade and evidence workflows are downstream
+stories and must use this shared policy when their domain models are added.
 
 Run migrations, create an active user, then initialize the first institution.
 Use the management wrapper so commands load the same root `.env` as Compose and
@@ -124,8 +127,8 @@ Verification:
 
 ```sh
 DJANGO_SECRET_KEY=test DJANGO_DB_ENGINE=django.db.backends.sqlite3 uv run pytest
-uv run ruff check . ../../libs/modules/access
-uv run ruff format --check . ../../libs/modules/access
+uv run ruff check . ../../libs/modules/access ../../libs/modules/calc
+uv run ruff format --check . ../../libs/modules/access ../../libs/modules/calc
 uv run python manage.py makemigrations --check --dry-run
 uv run python manage.py check
 ```
