@@ -2,6 +2,7 @@ from .assessments import AssessmentService
 from .enrollments import EnrollmentService
 from .grades import GradeBatchService, GradeService
 from .offerings import CourseOfferingService, InstructorAssignmentService
+from .outcomes import ProgramOutcomeService, ProgramOutcomeSetService
 from .programs import ProgramCourseService, ProgramMembershipService, ProgramService
 from .provider import AcademicServiceProvider, academic_service_provider
 from .structure import AcademicTermService, CourseService, DepartmentService, InstitutionService
@@ -21,6 +22,8 @@ __all__ = [
     "InstructorAssignmentService",
     "ProgramCourseService",
     "ProgramMembershipService",
+    "ProgramOutcomeService",
+    "ProgramOutcomeSetService",
     "ProgramService",
     "WorkspaceService",
     "academic_service_provider",

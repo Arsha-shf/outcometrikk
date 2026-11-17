@@ -6,6 +6,7 @@ from .grades import GradeBatchController, GradeController
 from .institutions import InstitutionController
 from .instructor_assignments import InstructorAssignmentController
 from .offerings import CourseOfferingController
+from .outcomes import ProgramOutcomeController, ProgramOutcomeSetController
 from .program_courses import ProgramCourseController
 from .program_memberships import ProgramMembershipController
 from .programs import ProgramController
@@ -32,5 +33,7 @@ __all__ = [
     "ProgramController",
     "ProgramCourseController",
     "ProgramMembershipController",
+    "ProgramOutcomeController",
+    "ProgramOutcomeSetController",
     "StudentWorkspaceController",
 ]

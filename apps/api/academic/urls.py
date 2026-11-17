@@ -17,6 +17,8 @@ from .controllers import (
     ProgramController,
     ProgramCourseController,
     ProgramMembershipController,
+    ProgramOutcomeController,
+    ProgramOutcomeSetController,
     StudentWorkspaceController,
 )
 
@@ -36,6 +38,8 @@ router.register("enrollments", EnrollmentController, basename="enrollment")
 router.register("grade-batches", GradeBatchController, basename="grade-batch")
 router.register("grades", GradeController, basename="grade")
 router.register("assessments", AssessmentController, basename="assessment")
+router.register("program-outcome-sets", ProgramOutcomeSetController, basename="program-outcome-set")
+router.register("program-outcomes", ProgramOutcomeController, basename="program-outcome")
 
 urlpatterns = [
     path("workspaces/instructor/", InstructorWorkspaceController.as_view()),

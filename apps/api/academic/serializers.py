@@ -16,6 +16,8 @@ from .models import (
     Program,
     ProgramCourse,
     ProgramMembership,
+    ProgramOutcome,
+    ProgramOutcomeSet,
 )
 
 
@@ -259,3 +261,54 @@ class GradeBatchSerializer(serializers.ModelSerializer):
         model = GradeBatch
         fields = ("id", "offering", "name", "released_at", "created_at")
         read_only_fields = ("id", "released_at", "created_at")
+
+
+class ProgramOutcomeSerializer(AcademicSerializer):
+    class Meta:
+        model = ProgramOutcome
+        fields = [
+            "id",
+            "outcome_set",
+            "code",
+            "label",
+            "description",
+            "source_url",
+            "ordering",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ProgramOutcomeSetSerializer(AcademicSerializer):
+    outcomes = ProgramOutcomeSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ProgramOutcomeSet
+        fields = [
+            "id",
+            "program",
+            "version",
+            "status",
+            "effective_date",
+            "source_reference",
+            "activated_at",
+            "activated_by",
+            "outcomes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "version",
+            "status",
+            "activated_at",
+            "activated_by",
+            "outcomes",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class ProgramOutcomeSetActivateSerializer(serializers.Serializer):
+    effective_date = serializers.DateField(required=False)
