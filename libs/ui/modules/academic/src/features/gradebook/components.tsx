@@ -58,10 +58,18 @@ function stateLabel(state: GradeState) {
 }
 
 function hasRole(session: ReturnType<typeof useSession>, role: string) {
-  return Boolean(session.data?.roles.some((assignment) => assignment.role === role));
+  return Boolean(
+    session.data?.roles.some((assignment) => assignment.role === role),
+  );
 }
 
-function AccessMessage({ title, children }: { title: string; children: ReactNode }) {
+function AccessMessage({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <main className="mx-auto flex min-h-svh max-w-4xl flex-col gap-4 p-8">
       <header className="flex items-center justify-between gap-4">
@@ -102,6 +110,7 @@ function GradeEntryRow({
     enrollmentId: string,
     assessmentId: string,
     batchId: string,
+    studentName: string,
   ) => Promise<unknown>;
 }) {
   const [state, setState] = useState<GradeState>(grade?.state ?? 'scored');
@@ -121,12 +130,16 @@ function GradeEntryRow({
         enrollmentId,
         assessmentId,
         grade?.batch ?? batch?.id ?? '',
+        studentName,
       ),
   });
   const batchIsReleased = Boolean(batch?.released_at);
   const correctionIsReleased = grade?.batch === batch?.id && batchIsReleased;
-  const reasonRequired = Boolean(grade ? correctionIsReleased : batchIsReleased);
-  const canSave = enrollmentStatus === 'enrolled' && (Boolean(grade) || Boolean(batch));
+  const reasonRequired = Boolean(
+    grade ? correctionIsReleased : batchIsReleased,
+  );
+  const canSave =
+    enrollmentStatus === 'enrolled' && (Boolean(grade) || Boolean(batch));
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -137,7 +150,9 @@ function GradeEntryRow({
     <TableRow>
       <TableCell className="min-w-44 font-medium">{studentName}</TableCell>
       <TableCell>
-        <Badge variant={enrollmentStatus === 'enrolled' ? 'outline' : 'secondary'}>
+        <Badge
+          variant={enrollmentStatus === 'enrolled' ? 'outline' : 'secondary'}
+        >
           {enrollmentStatus}
         </Badge>
       </TableCell>
@@ -166,11 +181,16 @@ function GradeEntryRow({
       <TableCell>
         <form onSubmit={submit} className="min-w-64 space-y-3">
           <Field>
-            <FieldLabel htmlFor={`state-${enrollmentId}`}>Grade state</FieldLabel>
+            <FieldLabel htmlFor={`state-${enrollmentId}`}>
+              Grade state
+            </FieldLabel>
             <NativeSelect
               id={`state-${enrollmentId}`}
               value={state}
-              onChange={(event) => setState(event.target.value as GradeState)}
+              onChange={(event) => {
+                save.reset();
+                setState(event.target.value as GradeState);
+              }}
               disabled={!canSave || save.isPending}
             >
               {gradeStates.map((item) => (
@@ -194,27 +214,61 @@ function GradeEntryRow({
                 step="0.01"
                 required
                 value={points}
-                onChange={(event) => setPoints(event.target.value)}
+                onChange={(event) => {
+                  save.reset();
+                  setPoints(event.target.value);
+                }}
                 disabled={!canSave || save.isPending}
+                aria-describedby={`points-help-${enrollmentId}`}
               />
+              <p
+                id={`points-help-${enrollmentId}`}
+                className="text-xs text-muted-foreground"
+              >
+                Enter 0 for a recorded zero. Use a grade state for work that was
+                not scored.
+              </p>
             </Field>
           )}
           {reasonRequired && (
             <Field>
-              <FieldLabel htmlFor={`reason-${enrollmentId}`}>Correction reason</FieldLabel>
+              <FieldLabel htmlFor={`reason-${enrollmentId}`}>
+                {grade
+                  ? 'Correction reason'
+                  : 'Reason for entering a released grade'}
+              </FieldLabel>
               <Input
                 id={`reason-${enrollmentId}`}
                 value={reason}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={(event) => {
+                  save.reset();
+                  setReason(event.target.value);
+                }}
                 maxLength={255}
                 required
                 disabled={!canSave || save.isPending}
+                aria-describedby={`reason-help-${enrollmentId}`}
               />
+              <p
+                id={`reason-help-${enrollmentId}`}
+                className="text-xs text-muted-foreground"
+              >
+                A reason is recorded in the grade history because this batch has
+                been released.
+              </p>
             </Field>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" disabled={!canSave || save.isPending}>
-              {save.isPending ? 'Saving…' : grade ? 'Save correction' : 'Save grade'}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!canSave || save.isPending}
+            >
+              {save.isPending
+                ? 'Saving…'
+                : grade
+                  ? 'Save correction'
+                  : 'Save grade'}
             </Button>
             {grade && (
               <Button
@@ -242,12 +296,17 @@ function GradeEntryRow({
           )}
           {showHistory && (
             <div className="border-l pl-3 text-xs">
-              {history.isPending && <p role="status">Loading change history…</p>}
-              {history.isError && <p role="alert">{errorMessage(history.error)}</p>}
+              {history.isPending && (
+                <p role="status">Loading change history…</p>
+              )}
+              {history.isError && (
+                <p role="alert">{errorMessage(history.error)}</p>
+              )}
               {history.data?.map((entry) => (
                 <p key={entry.version} className="py-1">
                   v{entry.version} · {stateLabel(entry.new_state)}
-                  {entry.new_state === 'scored' && ` · ${entry.new_points_earned} points`}
+                  {entry.new_state === 'scored' &&
+                    ` · ${entry.new_points_earned} points`}
                   {entry.reason && ` · ${entry.reason}`}
                   <span className="block text-muted-foreground">
                     {new Date(entry.created_at).toLocaleString()}
@@ -262,7 +321,13 @@ function GradeEntryRow({
   );
 }
 
-export function InstructorGradebook() {
+export function InstructorGradebook({
+  embedded = false,
+  defaultOfferingId = '',
+}: {
+  embedded?: boolean;
+  defaultOfferingId?: string;
+} = {}) {
   const session = useSession();
   const allowed = hasRole(session, 'instructor');
   const queryClient = useQueryClient();
@@ -271,7 +336,7 @@ export function InstructorGradebook() {
     queryFn: ({ signal }) => getInstructorWorkspace(signal),
     enabled: allowed,
   });
-  const [selectedOffering, setSelectedOffering] = useState('');
+  const [selectedOffering, setSelectedOffering] = useState(defaultOfferingId);
   const offerings = workspace.data?.offerings ?? [];
   const offeringId = offerings.some((item) => item.id === selectedOffering)
     ? selectedOffering
@@ -291,17 +356,52 @@ export function InstructorGradebook() {
   const [assessmentChoice, setAssessmentChoice] = useState('');
   const [batchChoice, setBatchChoice] = useState('');
   const [batchName, setBatchName] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [gradeFilter, setGradeFilter] = useState<
+    'all' | 'graded' | 'needs-grade'
+  >('all');
+  const [gradeSaveMessage, setGradeSaveMessage] = useState('');
   const [confirmRelease, setConfirmRelease] = useState(false);
   const active = board.data;
   const assessments = active?.assessments ?? [];
   const batches = active?.batches ?? [];
-  const chosenAssessment = assessments.find((item) => item.id === assessmentChoice)?.id
-    ?? assessments[0]?.id
-    ?? '';
-  const chosenBatch = batches.find((item) => item.id === batchChoice) ?? batches[0];
+  const chosenAssessment =
+    assessments.find((item) => item.id === assessmentChoice)?.id ??
+    assessments[0]?.id ??
+    '';
+  const chosenBatch =
+    batches.find((item) => item.id === batchChoice) ?? batches[0];
   const assessment = assessments.find((item) => item.id === chosenAssessment);
-  const selectedBatch = batches.find((item) => item.id === batchChoice) ?? chosenBatch;
+  const selectedBatch =
+    batches.find((item) => item.id === batchChoice) ?? chosenBatch;
   const selectedOfferingData = offerings.find((item) => item.id === offeringId);
+  const roster = selectedOfferingData?.roster ?? [];
+  const assessmentGrades = new Map(
+    (active?.grades ?? [])
+      .filter((grade) => grade.assessment === chosenAssessment)
+      .map((grade) => [grade.enrollment, grade]),
+  );
+  const gradedCount = roster.filter((student) =>
+    assessmentGrades.has(student.enrollment_id),
+  ).length;
+  const needsGradeCount = roster.filter(
+    (student) =>
+      student.status === 'enrolled' &&
+      !assessmentGrades.has(student.enrollment_id),
+  ).length;
+  const visibleRoster = roster.filter((student) => {
+    const matchesSearch = student.name
+      .toLocaleLowerCase()
+      .includes(studentSearch.trim().toLocaleLowerCase());
+    const isGraded = assessmentGrades.has(student.enrollment_id);
+    return (
+      matchesSearch &&
+      (gradeFilter === 'all' ||
+        (gradeFilter === 'graded'
+          ? isGraded
+          : student.status === 'enrolled' && !isGraded))
+    );
+  });
   const boardKey = ['academic', 'gradebook', offeringId] as const;
 
   const saveGrade = useMutation({
@@ -311,6 +411,7 @@ export function InstructorGradebook() {
       enrollmentId: string;
       assessmentId: string;
       batchId: string;
+      studentName: string;
     }) => {
       const points = input.draft.state === 'scored' ? input.draft.points : null;
       if (input.grade) {
@@ -332,7 +433,12 @@ export function InstructorGradebook() {
       };
       return createGrade(body);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: boardKey }),
+    onMutate: () => setGradeSaveMessage(''),
+    onSuccess: async (_, input) => {
+      const action = input.grade ? 'Grade correction saved' : 'Grade saved';
+      setGradeSaveMessage(`${action} for ${input.studentName}.`);
+      await queryClient.invalidateQueries({ queryKey: boardKey });
+    },
     onError: (error) => {
       if (error instanceof ApiError && error.kind === 'conflict') {
         void queryClient.invalidateQueries({ queryKey: boardKey });
@@ -354,6 +460,8 @@ export function InstructorGradebook() {
       await queryClient.invalidateQueries({ queryKey: boardKey });
     },
   });
+  const writesPending =
+    saveGrade.isPending || addBatch.isPending || release.isPending;
 
   if (session.isPending || (allowed && workspace.isPending)) {
     return (
@@ -390,15 +498,25 @@ export function InstructorGradebook() {
     addBatch.mutate(batchName.trim());
   }
 
+  const Container = embedded ? 'section' : 'main';
   return (
-    <main className="mx-auto flex min-h-svh max-w-7xl flex-col gap-6 p-6 md:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">Teaching workspace</p>
-          <h1 className="text-3xl font-semibold">Gradebook</h1>
-        </div>
-        <SessionMenu />
-      </header>
+    <Container
+      aria-label={embedded ? 'Gradebook operations' : undefined}
+      className={
+        embedded
+          ? 'flex flex-col gap-6'
+          : 'mx-auto flex min-h-svh max-w-7xl flex-col gap-6 p-6 md:p-8'
+      }
+    >
+      {!embedded && (
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Teaching workspace</p>
+            <h1 className="text-3xl font-semibold">Gradebook</h1>
+          </div>
+          <SessionMenu />
+        </header>
+      )}
       {offerings.length === 0 ? (
         <p>No offerings are assigned to this account.</p>
       ) : (
@@ -407,8 +525,8 @@ export function InstructorGradebook() {
             <CardHeader>
               <CardTitle>Offering and assessment</CardTitle>
               <CardDescription>
-                Grades are saved against the selected approved assessment. Zero is a valid score;
-                use a grade state for missing or exempt work.
+                Grades are saved against the selected approved assessment. Zero
+                is a valid score; use a grade state for missing or exempt work.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
@@ -417,7 +535,11 @@ export function InstructorGradebook() {
                 <NativeSelect
                   id="gradebook-offering"
                   value={offeringId}
-                  onChange={(event) => setSelectedOffering(event.target.value)}
+                  onChange={(event) => {
+                    setGradeSaveMessage('');
+                    setSelectedOffering(event.target.value);
+                  }}
+                  disabled={writesPending}
                 >
                   {offerings.map((item) => (
                     <NativeSelectOption key={item.id} value={item.id}>
@@ -427,12 +549,19 @@ export function InstructorGradebook() {
                 </NativeSelect>
               </Field>
               <Field>
-                <FieldLabel htmlFor="gradebook-assessment">Approved assessment</FieldLabel>
+                <FieldLabel htmlFor="gradebook-assessment">
+                  Approved assessment
+                </FieldLabel>
                 <NativeSelect
                   id="gradebook-assessment"
                   value={chosenAssessment}
-                  onChange={(event) => setAssessmentChoice(event.target.value)}
-                  disabled={!assessments.length || board.isPending}
+                  onChange={(event) => {
+                    setGradeSaveMessage('');
+                    setAssessmentChoice(event.target.value);
+                  }}
+                  disabled={
+                    !assessments.length || board.isPending || writesPending
+                  }
                 >
                   {assessments.length ? (
                     assessments.map((item) => (
@@ -441,13 +570,16 @@ export function InstructorGradebook() {
                       </NativeSelectOption>
                     ))
                   ) : (
-                    <NativeSelectOption value="">No approved assessments</NativeSelectOption>
+                    <NativeSelectOption value="">
+                      No approved assessments
+                    </NativeSelectOption>
                   )}
                 </NativeSelect>
               </Field>
               {assessment && (
                 <p className="text-sm text-muted-foreground md:col-span-2">
-                  {selectedOfferingData?.course} · maximum score {assessment.points_possible}
+                  {selectedOfferingData?.course} · maximum score{' '}
+                  {assessment.points_possible}
                 </p>
               )}
             </CardContent>
@@ -458,8 +590,9 @@ export function InstructorGradebook() {
           {board.data && !assessments.length && (
             <Alert>
               <AlertDescription>
-                No approved assessments are available for this offering. Ask your coordinator to
-                finish the syllabus assessment setup before entering grades.
+                No approved assessments are available for this offering. Ask
+                your coordinator to finish the syllabus assessment setup before
+                entering grades.
               </AlertDescription>
             </Alert>
           )}
@@ -470,28 +603,34 @@ export function InstructorGradebook() {
                 <CardHeader>
                   <CardTitle>Grade batch</CardTitle>
                   <CardDescription>
-                    Grades are grouped into batches. Releasing a batch makes its grades visible to
-                    students; corrections to released grades require a reason.
+                    Grades are grouped into batches. Releasing a batch makes its
+                    grades visible to students; corrections to released grades
+                    require a reason.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap items-end gap-3">
                     <Field className="min-w-64 flex-1">
-                      <FieldLabel htmlFor="gradebook-batch">Grade batch</FieldLabel>
+                      <FieldLabel htmlFor="gradebook-batch">
+                        Grade batch
+                      </FieldLabel>
                       <NativeSelect
                         id="gradebook-batch"
                         value={selectedBatch?.id ?? ''}
                         onChange={(event) => setBatchChoice(event.target.value)}
-                        disabled={!batches.length}
+                        disabled={!batches.length || writesPending}
                       >
                         {batches.length ? (
                           batches.map((batch) => (
                             <NativeSelectOption key={batch.id} value={batch.id}>
-                              {batch.name}{batch.released_at ? ' · Released' : ''}
+                              {batch.name}
+                              {batch.released_at ? ' · Released' : ''}
                             </NativeSelectOption>
                           ))
                         ) : (
-                          <NativeSelectOption value="">Create a batch to begin</NativeSelectOption>
+                          <NativeSelectOption value="">
+                            Create a batch to begin
+                          </NativeSelectOption>
                         )}
                       </NativeSelect>
                     </Field>
@@ -506,40 +645,62 @@ export function InstructorGradebook() {
                     )}
                   </div>
                   {confirmRelease && selectedBatch && (
-                    <div className="rounded-md border p-4" aria-labelledby="release-warning">
+                    <div
+                      className="rounded-md border p-4"
+                      aria-labelledby="release-warning"
+                    >
                       <p id="release-warning" className="font-medium">
-                        Students will be able to see released grades in this batch.
+                        Students will be able to see released grades in this
+                        batch.
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           onClick={() => release.mutate(selectedBatch.id)}
-                          disabled={release.isPending}
+                          disabled={writesPending}
                         >
                           {release.isPending ? 'Releasing…' : 'Confirm release'}
                         </Button>
-                        <Button variant="outline" onClick={() => setConfirmRelease(false)}>
+                        <Button
+                          variant="outline"
+                          onClick={() => setConfirmRelease(false)}
+                          disabled={writesPending}
+                        >
                           Cancel
                         </Button>
                       </div>
                     </div>
                   )}
-                  {release.isError && <p role="alert">{errorMessage(release.error)}</p>}
-                  <form onSubmit={createBatch} className="flex flex-wrap items-end gap-3">
+                  {release.isError && (
+                    <p role="alert">{errorMessage(release.error)}</p>
+                  )}
+                  <form
+                    onSubmit={createBatch}
+                    className="flex flex-wrap items-end gap-3"
+                  >
                     <Field className="min-w-64 flex-1">
-                      <FieldLabel htmlFor="new-grade-batch">New batch name</FieldLabel>
+                      <FieldLabel htmlFor="new-grade-batch">
+                        New batch name
+                      </FieldLabel>
                       <Input
                         id="new-grade-batch"
                         value={batchName}
                         onChange={(event) => setBatchName(event.target.value)}
                         maxLength={120}
                         required
+                        disabled={writesPending}
                       />
                     </Field>
-                    <Button type="submit" variant="outline" disabled={addBatch.isPending}>
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      disabled={writesPending || !batchName.trim()}
+                    >
                       {addBatch.isPending ? 'Creating…' : 'Create batch'}
                     </Button>
                   </form>
-                  {addBatch.isError && <p role="alert">{errorMessage(addBatch.error)}</p>}
+                  {addBatch.isError && (
+                    <p role="alert">{errorMessage(addBatch.error)}</p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -553,49 +714,142 @@ export function InstructorGradebook() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {selectedOfferingData.roster.length ? (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead scope="col">Student</TableHead>
-                              <TableHead scope="col">Enrollment</TableHead>
-                              <TableHead scope="col">Current grade</TableHead>
-                              <TableHead scope="col">Enter or correct grade</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {selectedOfferingData.roster.map((student) => {
-                              const existing = active?.grades.find(
-                                (grade) =>
-                                  grade.enrollment === student.enrollment_id &&
-                                  grade.assessment === chosenAssessment,
-                              );
-                              return (
-                                <GradeEntryRow
-                                  key={`${student.enrollment_id}-${chosenAssessment}-${existing?.version ?? 0}`}
-                                  enrollmentId={student.enrollment_id}
-                                  studentName={student.name}
-                                  enrollmentStatus={student.status}
-                                  assessmentId={chosenAssessment}
-                                  pointsPossible={assessment?.points_possible ?? '0'}
-                                  batch={existing ? batches.find((item) => item.id === existing.batch) : selectedBatch}
-                                  grade={existing}
-                                  onSave={(grade, draft, enrollmentId, assessmentId, batchId) =>
-                                    saveGrade.mutateAsync({
+                    <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-md border p-3">
+                        <p className="text-sm text-muted-foreground">Roster</p>
+                        <p className="text-2xl font-semibold">
+                          {roster.length}
+                        </p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-sm text-muted-foreground">
+                          Grades entered
+                        </p>
+                        <p className="text-2xl font-semibold">{gradedCount}</p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-sm text-muted-foreground">
+                          Needs a grade
+                        </p>
+                        <p className="text-2xl font-semibold">
+                          {needsGradeCount}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mb-4 grid gap-4 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel htmlFor="gradebook-student-search">
+                          Find a student
+                        </FieldLabel>
+                        <Input
+                          id="gradebook-student-search"
+                          type="search"
+                          value={studentSearch}
+                          onChange={(event) =>
+                            setStudentSearch(event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="gradebook-grade-filter">
+                          Show students
+                        </FieldLabel>
+                        <NativeSelect
+                          id="gradebook-grade-filter"
+                          value={gradeFilter}
+                          onChange={(event) =>
+                            setGradeFilter(
+                              event.target.value as typeof gradeFilter,
+                            )
+                          }
+                        >
+                          <NativeSelectOption value="all">
+                            All students
+                          </NativeSelectOption>
+                          <NativeSelectOption value="needs-grade">
+                            Needs a grade (enrolled)
+                          </NativeSelectOption>
+                          <NativeSelectOption value="graded">
+                            Grade entered
+                          </NativeSelectOption>
+                        </NativeSelect>
+                      </Field>
+                    </div>
+                    {gradeSaveMessage && (
+                      <p
+                        role="status"
+                        className="mb-3 text-sm text-muted-foreground"
+                      >
+                        {gradeSaveMessage}
+                      </p>
+                    )}
+                    {roster.length ? (
+                      visibleRoster.length ? (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead scope="col">Student</TableHead>
+                                <TableHead scope="col">Enrollment</TableHead>
+                                <TableHead scope="col">Current grade</TableHead>
+                                <TableHead scope="col">
+                                  Enter or correct grade
+                                </TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {visibleRoster.map((student) => {
+                                const existing = assessmentGrades.get(
+                                  student.enrollment_id,
+                                );
+                                return (
+                                  <GradeEntryRow
+                                    key={`${student.enrollment_id}-${chosenAssessment}-${existing?.version ?? 0}`}
+                                    enrollmentId={student.enrollment_id}
+                                    studentName={student.name}
+                                    enrollmentStatus={student.status}
+                                    assessmentId={chosenAssessment}
+                                    pointsPossible={
+                                      assessment?.points_possible ?? '0'
+                                    }
+                                    batch={
+                                      existing
+                                        ? batches.find(
+                                            (item) =>
+                                              item.id === existing.batch,
+                                          )
+                                        : selectedBatch
+                                    }
+                                    grade={existing}
+                                    onSave={(
                                       grade,
                                       draft,
                                       enrollmentId,
                                       assessmentId,
                                       batchId,
-                                    })
-                                  }
-                                />
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
+                                      studentName,
+                                    ) =>
+                                      saveGrade.mutateAsync({
+                                        grade,
+                                        draft,
+                                        enrollmentId,
+                                        assessmentId,
+                                        batchId,
+                                        studentName,
+                                      })
+                                    }
+                                  />
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No students match the current search and grade
+                          filters.
+                        </p>
+                      )
                     ) : (
                       <p className="text-sm text-muted-foreground">
                         No students are enrolled in this offering.
@@ -608,10 +862,12 @@ export function InstructorGradebook() {
           )}
         </>
       )}
-      <Button asChild variant="outline" className="self-start">
-        <a href="/instructor">Back to instructor dashboard</a>
-      </Button>
-    </main>
+      {!embedded && (
+        <Button asChild variant="outline" className="self-start">
+          <a href="/instructor">Back to instructor dashboard</a>
+        </Button>
+      )}
+    </Container>
   );
 }
 
@@ -629,11 +885,15 @@ export function StudentGradeSummary() {
     enabled: allowed,
   });
   if (!allowed) return null;
-  if (grades.isPending || workspace.isPending) return <p role="status">Loading your released grades…</p>;
+  if (grades.isPending || workspace.isPending)
+    return <p role="status">Loading your released grades…</p>;
   if (grades.isError) return <p role="alert">{errorMessage(grades.error)}</p>;
-  if (workspace.isError) return <p role="alert">{errorMessage(workspace.error)}</p>;
+  if (workspace.isError)
+    return <p role="alert">{errorMessage(workspace.error)}</p>;
 
-  const courses = new Map(workspace.data.courses.map((course) => [course.offering_id, course]));
+  const courses = new Map(
+    workspace.data.courses.map((course) => [course.offering_id, course]),
+  );
   return (
     <section aria-labelledby="released-grades-title">
       <h2 id="released-grades-title" className="mb-3 text-xl font-semibold">
@@ -656,7 +916,9 @@ export function StudentGradeSummary() {
                 return (
                   <TableRow key={grade.id}>
                     <TableCell>
-                      {course ? `${course.course_code} · ${course.section}` : 'Course'}
+                      {course
+                        ? `${course.course_code} · ${course.section}`
+                        : 'Course'}
                     </TableCell>
                     <TableCell>{grade.assessment_title}</TableCell>
                     <TableCell>{grade.batch_name}</TableCell>

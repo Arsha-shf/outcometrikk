@@ -4,11 +4,16 @@
 It uses the public session contract from `@outcometrik/access`, shared transport,
 and shared UI components.
 
-The instructor dashboard shows assigned offerings and authorized roster status. The
-gradebook at `/instructor/gradebook` selects approved assessments, creates batches,
-records scored/zero/missing/exempt/withdrawn/incomplete results, corrects existing
-grades with optimistic versions, shows append-only history, and releases batches to
-students. The student dashboard lists only grades returned by the released-grade API.
+The instructor dashboard at `/instructor` uses a workspace sidebar with overview and
+grades/roster operations. It shows assigned offerings and active roster counts; each
+offering opens its gradebook directly. The gradebook at `/instructor/gradebook` remains
+available as a standalone route. It selects approved assessments, creates and releases
+batches, and records scored/zero/missing/exempt/withdrawn/incomplete results. Instructors
+can search the roster, filter students by grade status, see completion counts, correct
+grades with optimistic versions, and inspect append-only history. Released-grade entry
+and corrections prompt for a reason; inactive enrollments remain visible but cannot be
+graded. Loading, empty, save, validation, and conflict states are announced in the
+interface. The student dashboard lists only grades returned by the released-grade API.
 Assessment authoring is not part of GRD-01; the gradebook reads approved assessments
 from the scoped API and displays an empty state when curriculum setup is incomplete.
 The coordinator dashboard shows memberships and offering counts inside managed

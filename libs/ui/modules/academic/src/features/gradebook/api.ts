@@ -139,6 +139,17 @@ function unwrapPage<T>(data: unknown, isRow: (row: unknown) => row is T): T[] {
   throw new ApiError('unexpected', 200);
 }
 
+async function requestValidated<T>(
+  path: `/api/${string}`,
+  options: Parameters<typeof request>[1],
+  isValue: (value: unknown) => value is T,
+  status: number,
+): Promise<T> {
+  const data: unknown = await request(path, options);
+  if (!isValue(data)) throw new ApiError('unexpected', status);
+  return data;
+}
+
 export async function getApprovedAssessments(offering: string, signal?: AbortSignal) {
   const query = new URLSearchParams({ offering, page_size: '200' });
   const data: unknown = await request(`/api/v1/assessments/?${query}`, {
@@ -184,25 +195,32 @@ export async function getGradeHistory(gradeId: string, signal?: AbortSignal) {
 }
 
 export function createGradeBatch(offering: string, name: string) {
-  return request<GradeBatch>('/api/v1/grade-batches/', {
-    method: 'POST',
-    body: { offering, name },
-  });
+  return requestValidated(
+    '/api/v1/grade-batches/',
+    { method: 'POST', body: { offering, name } },
+    isGradeBatch,
+    201,
+  );
 }
 
 export function releaseGradeBatch(batchId: string) {
-  return request<GradeBatch>(`/api/v1/grade-batches/${encodeURIComponent(batchId)}/release/`, {
-    method: 'POST',
-  });
+  return requestValidated(
+    `/api/v1/grade-batches/${encodeURIComponent(batchId)}/release/`,
+    { method: 'POST' },
+    isGradeBatch,
+    200,
+  );
 }
 
 export function createGrade(input: GradeWrite) {
-  return request<GradeRecord>('/api/v1/grades/', { method: 'POST', body: input });
+  return requestValidated('/api/v1/grades/', { method: 'POST', body: input }, isGrade, 201);
 }
 
 export function correctGrade(gradeId: string, input: GradeCorrection) {
-  return request<GradeRecord>(`/api/v1/grades/${encodeURIComponent(gradeId)}/`, {
-    method: 'PATCH',
-    body: input,
-  });
+  return requestValidated(
+    `/api/v1/grades/${encodeURIComponent(gradeId)}/`,
+    { method: 'PATCH', body: input },
+    isGrade,
+    200,
+  );
 }
