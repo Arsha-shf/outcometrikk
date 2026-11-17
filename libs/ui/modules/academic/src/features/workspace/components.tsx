@@ -118,7 +118,7 @@ export function InstructorDashboard() {
     0,
   );
   const offering = offerings.find((item) => item.id === selectedOffering);
-  const currentTitle = tab === 'overview' ? 'Instructor overview' : 'Gradebook';
+  const currentTitle = tab === 'overview' ? 'Instructor dashboard' : 'Gradebook';
   return (
     <SidebarProvider>
       <a className="skip-link" href="#instructor-main">
@@ -199,7 +199,7 @@ export function InstructorDashboard() {
               Instructor workspace
             </p>
             <h1 className="text-3xl font-semibold tracking-tight">
-              {currentTitle}.
+              {currentTitle}
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
               {tab === 'overview'
