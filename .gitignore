@@ -15,7 +15,7 @@ apps/api/db.sqlite3
 .mypy_cache/
 playwright-report/
 test-results/
+reports/
 /apps/web/.next
-
 *.tsbuildinfo
 .vscode/
