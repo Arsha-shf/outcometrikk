@@ -38,6 +38,7 @@ import {
 } from '@outcometrik/ui';
 import { SessionMenu, useSession } from '@outcometrik/access';
 import { errorMessage } from '@outcometrik/access';
+import { SyllabusWorkspace, ProgramOutcomeSets } from '../syllabus/components';
 import {
   getCoordinatorWorkspace,
   getInstructorWorkspace,
@@ -310,6 +311,11 @@ export function InstructorDashboard() {
                                     No students are enrolled in this offering.
                                   </p>
                                 )}
+                                <SyllabusWorkspace
+                                  offering={item.id}
+                                  canDraft
+                                  canApprove={false}
+                                />
                                 <Button
                                   onClick={() => {
                                     setSelectedOffering(item.id);
@@ -386,6 +392,7 @@ export function CoordinatorAcademicOverview() {
               <CardDescription>{program.department}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <ProgramOutcomeSets program={program.id} />
               <section>
                 <h3 className="mb-2 font-medium">Offerings</h3>
                 {workspace.data.offerings.filter(
@@ -405,6 +412,11 @@ export function CoordinatorAcademicOverview() {
                           <Badge variant="outline">
                             {offering.enrolled} enrolled
                           </Badge>
+                          <SyllabusWorkspace
+                            offering={offering.id}
+                            canDraft
+                            canApprove
+                          />
                         </li>
                       ))}
                   </ul>
