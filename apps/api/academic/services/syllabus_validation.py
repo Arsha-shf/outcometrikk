@@ -5,6 +5,7 @@ from typing import Any
 
 from django.core.exceptions import ValidationError
 
+from .. import policy
 from ..models import LearningOutcome, ProgramOutcome, Syllabus, SyllabusAssessment
 
 
@@ -73,6 +74,7 @@ class SyllabusValidator:
         if (
             syllabus.learning_outcomes.exists()
             or syllabus.assessments.exists()
+            or syllabus.po_contributions.exists()
             or syllabus.assessment_lo_mappings.exists()
             or syllabus.lo_po_mappings.exists()
         ):
@@ -87,6 +89,38 @@ class SyllabusValidator:
             raise ValidationError({"max_points": "Maximum points must be greater than zero."})
 
     @staticmethod
+    def validate_po_contribution(syllabus, program_outcome, weight):
+        """Ensure course-to-PO contribution weight is integer 1..5 and bound to program's PO set."""
+        SyllabusValidator.validate_editable(syllabus)
+        if not policy.is_valid_course_po_weight(weight):
+            raise ValidationError(
+                {
+                    "weight": (
+                        f"Course-to-PO contribution weight must be an integer between "
+                        f"{policy.MIN_COURSE_PO_WEIGHT} and {policy.MAX_COURSE_PO_WEIGHT}."
+                    )
+                }
+            )
+        if program_outcome is None:
+            raise ValidationError({"program_outcome": "A valid program outcome is required."})
+        outcome_set = program_outcome.outcome_set
+        if outcome_set.program_id != syllabus.offering.program_id:
+            raise ValidationError(
+                {
+                    "program_outcome": (
+                        "Program outcome must belong to the offering's program outcome set."
+                    )
+                }
+            )
+        if syllabus.po_set_version is None or outcome_set.version != syllabus.po_set_version:
+            raise ValidationError(
+                {
+                    "program_outcome": (
+                        "Program outcome version does not match the syllabus bound PO-set version."
+                    )
+                }
+            )
+
     def validate_assessment_lo_payload(*, syllabus, mappings: list[dict]) -> list[dict]:
         """Validate A->LO matrix replacement items against syllabus ownership and weight rules."""
         if not isinstance(mappings, list):

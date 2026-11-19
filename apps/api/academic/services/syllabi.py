@@ -10,6 +10,7 @@ from .. import scoping
 from ..models import (
     AssessmentLOMapping,
     CourseOffering,
+    CoursePOContribution,
     LearningOutcome,
     LOPOMapping,
     Program,
@@ -59,6 +60,7 @@ class SyllabusService:
         return scoping.scope_syllabi(effective_actor, queryset).prefetch_related(
             "learning_outcomes",
             "assessments",
+            "po_contributions__program_outcome",
             "assessment_lo_mappings",
             "lo_po_mappings",
         )
@@ -168,16 +170,17 @@ class SyllabusService:
         offering = syllabus.offering
         SyllabusValidator.validate_revision(syllabus, offering)
         version = offering.syllabi.count() + 1
-        target_po_set_version = (
+
+        active_set = (
             ProgramOutcomeSet.objects.filter(
                 program_id=offering.program_id,
                 status=ProgramOutcomeSet.Status.ACTIVE,
                 effective_date__lte=timezone.localdate(),
             )
             .order_by("-effective_date")
-            .values_list("version", flat=True)
             .first()
         )
+        target_po_set_version = active_set.version if active_set else syllabus.po_set_version
         revision = Syllabus(
             offering=offering,
             version=version,
@@ -209,6 +212,24 @@ class SyllabusService:
                 max_points=a.max_points,
             )
             asmt_by_code[a.code] = cloned_asmt
+
+        for contrib in (
+            syllabus.po_contributions.select_related("program_outcome")
+            .all()
+            .order_by("program_outcome__ordering")
+        ):
+            target_po = contrib.program_outcome
+            if revision.po_set_version != syllabus.po_set_version and active_set is not None:
+                target_po = ProgramOutcome.objects.filter(
+                    outcome_set=active_set,
+                    code=contrib.program_outcome.code,
+                ).first()
+            if target_po is not None:
+                CoursePOContribution.objects.create(
+                    syllabus=revision,
+                    program_outcome=target_po,
+                    weight=contrib.weight,
+                )
 
         for m in syllabus.assessment_lo_mappings.select_related(
             "assessment", "learning_outcome"
@@ -245,6 +266,7 @@ class SyllabusService:
                         weight=m.weight,
                         is_active=m.is_active,
                     )
+
         return revision
 
     @transaction.atomic
@@ -397,13 +419,60 @@ class SyllabusService:
         self._editable(syllabus)
         instance.delete()
 
+    def list_po_contributions(self, *, syllabus):
+        return syllabus.po_contributions.select_related("program_outcome").order_by(
+            "program_outcome__ordering", "created_at"
+        )
+
+    @transaction.atomic
+    def set_po_contribution(
+        self, *, syllabus, program_outcome, weight: int
+    ) -> CoursePOContribution:
+        syllabus = (
+            Syllabus.objects.select_for_update().select_related("offering").get(pk=syllabus.pk)
+        )
+        po = (
+            ProgramOutcome.objects.select_related("outcome_set")
+            .filter(pk=getattr(program_outcome, "pk", program_outcome))
+            .first()
+        )
+        SyllabusValidator.validate_po_contribution(syllabus, po, weight)
+        existing = CoursePOContribution.objects.filter(
+            syllabus=syllabus, program_outcome=po
+        ).first()
+        if existing is not None:
+            existing.weight = weight
+            existing.save(update_fields=["weight", "updated_at"])
+            return existing
+        try:
+            with transaction.atomic():
+                return CoursePOContribution.objects.create(
+                    syllabus=syllabus,
+                    program_outcome=po,
+                    weight=weight,
+                )
+        except IntegrityError as exc:
+            raise ValidationError(
+                "A contribution weight for this program outcome already exists in this syllabus."
+            ) from exc
+
+    @transaction.atomic
+    def delete_po_contribution(self, *, instance: CoursePOContribution) -> None:
+        syllabus = Syllabus.objects.select_for_update().get(pk=instance.syllabus_id)
+        self._editable(syllabus)
+        instance.delete()
+
     # -- deletion ----------------------------------------------------------
 
     @transaction.atomic
     def remove_unused_draft(self, *, syllabus) -> Syllabus:
         """Retire an empty draft version; referenced versions stay untouched.
 
+
+        Referenced means holding LO/assessment/po_contribution rows or having been approved.
+
         Referenced means holding LO/assessment/mapping rows or having been approved.
+
         Retirement keeps history (rows are hard-delete protected) and does not
         bump revisions because an empty draft never fed a calculation. Grade
         rows arrive with GRD-01 and will extend the referenced check there.

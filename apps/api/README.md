@@ -183,7 +183,6 @@ existing records. Institution scopes are established by trusted bootstrap; new i
 be provisioned against an existing institution scope. Reads filter by access roles and grants,
 and writes enforce the required capability against the record's stored parent scope. Lists are
 paginated (`page`, `page_size`, default 50, max 200) and filterable by query parameter.
-
 | Route                                   | Methods                      | Filters                                                                                     |
 | --------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------- |
 | `/institutions/`                        | GET, POST, GET/PATCH `{id}`  | `code`                                                                                      |
@@ -204,12 +203,14 @@ paginated (`page`, `page_size`, default 50, max 200) and filterable by query par
 | `/syllabi/{id}/bind-active-po-set/`     | POST                         | bind a draft to the current active PO-set version                                           |
 | `/syllabi/{id}/learning-outcomes/`      | GET, POST, PATCH `{childId}` | draft LO rows                                                                               |
 | `/syllabi/{id}/assessments/`            | GET, POST, PATCH `{childId}` | draft assessment rows                                                                       |
+| `/syllabi/{id}/po-contributions/`       | GET, POST, PATCH/DELETE `{childId}` | coordinator-governed 1–5 course-to-PO contribution weights                              |
 | `/syllabi/{id}/assessment-lo-mappings/` | GET, POST                    | atomic A→LO mapping matrix replacement (`expected_revision`, `mappings`)                    |
 | `/syllabi/{id}/lo-po-mappings/`         | GET, POST                    | atomic LO→PO mapping matrix replacement (`expected_revision`, `mappings`)                   |
 | `/syllabi/{id}/mapping-validation/`     | GET                          | pre-approval reachability and `MAPPED`/`UNMAPPED` & `ASSESSED`/`NOT_ASSESSED` diagnostics   |
 | `/syllabi/{id}/approve/`                | POST                         | coordinator approval                                                                        |
 | `/syllabi/{id}/revise/`                 | POST                         | clone approved into new draft                                                               |
 | `/syllabi/{id}/retire/`                 | POST                         | retire an empty draft                                                                       |
+
 
 Rules:
 
