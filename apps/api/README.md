@@ -197,6 +197,16 @@ paginated (`page`, `page_size`, default 50, max 200) and filterable by query par
 | `/offerings/{id}/enrollments/` | GET, POST | roster of one offering |
 | `/instructor-assignments/` | same | `offering`, `user`, `assignment_role` |
 | `/enrollments/` | GET, POST, GET `{id}` | `offering`, `student`, `status`, `eligible_for_outcomes` |
+| `/po-sets/` | GET, POST, GET `{id}` | `program`, `active`; create with `program`, `version`, `effective_date`, `source_reference` |
+| `/po-sets/{id}/outcomes/` | GET, POST, PATCH `{childId}` | draft PO definitions |
+| `/po-sets/{id}/activate/` | POST | coordinator activation |
+| `/syllabi/` | GET, POST, GET `{id}` | `offering`, `status` |
+| `/syllabi/{id}/bind-active-po-set/` | POST | bind a draft to the current active PO-set version |
+| `/syllabi/{id}/learning-outcomes/` | GET, POST, PATCH `{childId}` | draft LO rows |
+| `/syllabi/{id}/assessments/` | GET, POST, PATCH `{childId}` | draft assessment rows |
+| `/syllabi/{id}/approve/` | POST | coordinator approval |
+| `/syllabi/{id}/revise/` | POST | clone approved into new draft |
+| `/syllabi/{id}/retire/` | POST | retire an empty draft |
 
 Rules:
 
@@ -217,6 +227,21 @@ Rules:
   withdrawn and incomplete do not). The policy version is stored on each enrollment.
 - `input_revision` on programs and offerings increases when an eligible offering or enrollment
   is added, or when a status change flips eligibility. Calculations use it to detect stale input.
+
+Syllabi (CUR-01):
+
+- Versions are immutable history: draft edits are allowed, approval locks a version forever,
+  and changes require a new revision cloned from the approved one (`POST /syllabi/{id}/revise/`).
+- One draft and at most one approved version per offering, enforced by database constraints.
+- Drafting requires the `syllabus.draft` capability at the offering scope (assigned instructors);
+  approval requires `syllabus.approve` at the program scope (coordinators, administrators).
+- An approval records who approved and when; approving bumps the program and offering
+  `input_revision` because official calculations become possible.
+- LOs and assessments carry unique codes and order numbers per version; assessments need
+  `max_points > 0`. Approving requires at least one LO and one assessment.
+- Empty drafts can be retired via `POST /syllabi/{id}/retire/`; versions holding configuration
+  or approval are kept forever. There is no DELETE.
+- `po_set_version` binds to a registered program PO-set version; approval requires the active version.
 
 Downstream stories should read rosters through `academic.selectors.eligible_roster(offering)`.
 
@@ -281,6 +306,23 @@ admin, coordinator, instructor, then student.
 - `GET /api/v1/workspaces/instructor/` returns instructor-assigned offerings and their authorized
   rosters. An exact `grades.view` grant can add its named offering.
 - `GET /api/v1/workspaces/student/` returns only the signed-in student's own enrollments.
+
+These responses use `Cache-Control: no-store`. Gradebook and published PO records are not yet part
+of the academic schema; the student workspace reports no published outcomes until those records
+are implemented. The instructor workspace currently provides the assigned course roster, not grade
+entry.
+
+### PO-set compatibility and calculation handoff
+
+Coordinators or administrators can register a program PO-set version and activate it once its
+effective date has arrived. Registering a version records its identity, effective date, and source reference. Add complete,
+ordered PO1–PO11 definitions with label, description, and source reference before activation.
+Activated definitions are immutable; OUT-01 remains responsible for its pilot seed and lifecycle UI.
+Syllabus drafts bind to the active version at creation, or can be rebound using
+`bind-active-po-set/`; approval requires the binding to match the current active version.
+Activating a new set invalidates prior calculation input revisions. Future official calculation
+code must call `academic.services.syllabi.official_syllabus_for(offering)` and handle its
+validation error; no official scoring path is implemented by this API slice.
 
 These responses use `Cache-Control: no-store`. The instructor workspace provides the assigned
 course roster and the gradebook UI. Approved assessments are read-only through

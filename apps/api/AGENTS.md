@@ -31,6 +31,54 @@ The repository root `AGENTS.md` and `docs/CODE_STYLE.md` still apply.
   or services. Add focused service tests for allowed and denied scopes, and API
   tests for HTTP behavior and serialization.
 
+## Controller action design (discrete HTTP handlers)
+
+- Follow the single-responsibility handler pattern (analogous to NestJS `@Get()`/`@Post()`
+  and Spring Boot `@GetMapping`/`@PostMapping`).
+- Do NOT combine multiple HTTP verbs into a single controller method with
+  `if request.method == ...` branching (e.g., avoid `@action(methods=["get", "post"]) def items(...)`).
+- Write separate, discrete methods for each HTTP method on custom actions, using
+  verb-prefixed method names:
+  - `list_<resource>` for `GET` collection sub-actions.
+  - `create_<resource>` for `POST` creation sub-actions.
+  - `update_<resource>` for `PATCH` or `PUT` update sub-actions.
+  - `delete_<resource>` for `DELETE` removal sub-actions.
+- Specify matching `url_path` and `url_name` on paired actions targeting the same
+  endpoint (e.g., `@action(detail=True, methods=["get"], url_path="items", url_name="items")`
+  and `@action(detail=True, methods=["post"], url_path="items", url_name="items")`).
+- Use `AcademicRouter` (from `academic.router`) in URL registrations. It automatically
+  merges discrete actions sharing the same `(url, detail)` into a unified route mapping
+  without route shadowing or 405 errors.
+- Use the `@validate_payload(SerializerClass)` interceptor decorator (analogous to NestJS
+  `@Body(ValidationPipe)`). It instantiates, context-binds, and validates the serializer before
+  the handler executes, injecting validated data as `payload` into the method kwargs.
+  For partial updates (e.g. PATCH), pass `partial=True`. When merging URL parameters into the
+  validated payload, pass `merge_data=lambda self, request, pk=None: {"parent": str(self.get_object().pk)}`.
+- Do NOT write boilerplate `try: ... except DjangoValidationError: ...` blocks in controllers.
+  `AcademicController.handle_exception` intercepts `DjangoValidationError` globally (analogous to a
+  NestJS `ExceptionFilter`) and transforms it into a standard DRF 400 `ValidationError` response.
+
+## Domain validator design (business invariant enforcement)
+
+- Follow the class-based domain validator pattern (e.g., `GradeValidator`, `ProgramOutcomeSetValidator`,
+  `SyllabusValidator`).
+- Encapsulate domain invariant rules, lifecycle prerequisites, sibling uniqueness constraints,
+  and editability checks into dedicated validator classes in `<domain>_validation.py`.
+- Structure validator classes with descriptive static methods:
+  - `validate_<lifecycle_action>` (e.g., `validate_activation`, `validate_approval`, `validate_revision`)
+  - `validate_<invariant>` (e.g., `validate_editable`, `validate_assessment_points`, `validate_mutation`,
+    `validate_set_update`)
+- Keep domain validation pure and isolated from database transaction locking (`select_for_update`)
+  and write operations. Services own row locks, transactions, and mutations, passing models or
+  pre-queried related state to validators.
+- Validators must raise `django.core.exceptions.ValidationError` with specific, user-actionable
+  error messages (or field error dictionaries for field-specific invariants).
+- Export domain validator classes in `academic.services.__init__.py` alongside services so they can
+  be tested in isolation and reused across commands or batch pipelines.
+- Avoid loose module-level business or validation helper functions. Callers (controllers, commands,
+  and tests) must directly invoke the domain service class (e.g. `ProgramOutcomeSetService.activate`)
+  or the domain validator class (e.g. `ProgramOutcomeSetValidator.validate_activation`).
+
 ## Django conventions
 
 - Prefer explicit service classes and typed method inputs over module-level

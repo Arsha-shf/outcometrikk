@@ -36,8 +36,10 @@ jobs:
           branch_pattern: '^((feat|fix|perf|docs|chore|refactor|test|ci|build|improve|work|wip|copilot)/[a-zA-Z0-9_.-]+|[a-zA-Z0-9]+-[a-zA-Z0-9_.-]+)$'
           issue: ${{ steps.issue-check.outputs.required == 'true' }}
           body: true
-          verbose: false
+          verbose: true
           edit: true
           draft: true
           bot: true
           strict: true
+
+

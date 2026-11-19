@@ -13,11 +13,14 @@ from .models import (
     GradeHistory,
     Institution,
     InstructorAssignment,
+    LearningOutcome,
     Program,
     ProgramCourse,
     ProgramMembership,
     ProgramOutcome,
     ProgramOutcomeSet,
+    Syllabus,
+    SyllabusAssessment,
 )
 
 
@@ -188,6 +191,149 @@ class EnrollmentStatusUpdateSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=255, allow_blank=True, default="")
 
 
+class LearningOutcomeSerializer(AcademicSerializer):
+    class Meta:
+        model = LearningOutcome
+        fields = ["id", "code", "description", "order", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class SyllabusAssessmentSerializer(AcademicSerializer):
+    class Meta:
+        model = SyllabusAssessment
+        fields = [
+            "id",
+            "code",
+            "kind",
+            "order",
+            "is_required",
+            "is_active",
+            "max_points",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_max_points(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Maximum points must be greater than zero.")
+        return value
+
+
+class AssessmentSerializer(AcademicSerializer):
+    class Meta:
+        model = Assessment
+        fields = ("id", "offering", "title", "points_possible", "status")
+        read_only_fields = fields
+
+
+class SyllabusSerializer(AcademicSerializer):
+    """A syllabus version with its draft-editable children."""
+
+    learning_outcomes = LearningOutcomeSerializer(many=True, read_only=True)
+    assessments = SyllabusAssessmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Syllabus
+        fields = [
+            "id",
+            "offering",
+            "version",
+            "status",
+            "approved_by",
+            "approved_at",
+            "po_set_version",
+            "learning_outcomes",
+            "assessments",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "version",
+            "status",
+            "approved_by",
+            "approved_at",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class SyllabusCreateSerializer(serializers.Serializer):
+    offering = serializers.PrimaryKeyRelatedField(queryset=CourseOffering.objects.all())
+    po_set_version = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+
+class ProgramOutcomeSerializer(AcademicSerializer):
+    ordering = serializers.IntegerField(required=False)
+    order = serializers.IntegerField(source="ordering", required=False)
+    source_url = serializers.CharField(required=False, allow_blank=True)
+    source_reference = serializers.CharField(source="source_url", required=False, allow_blank=True)
+
+    class Meta:
+        model = ProgramOutcome
+        fields = [
+            "id",
+            "outcome_set",
+            "code",
+            "label",
+            "description",
+            "source_url",
+            "source_reference",
+            "ordering",
+            "order",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+        validators = []
+
+    def validate(self, attrs):
+        if not self.partial:
+            if "ordering" not in attrs:
+                raise serializers.ValidationError({"ordering": "This field is required."})
+            if "source_url" not in attrs or not attrs["source_url"].strip():
+                raise serializers.ValidationError({"source_url": "This field is required."})
+        return attrs
+
+
+class ProgramOutcomeSetSerializer(AcademicSerializer):
+    outcomes = ProgramOutcomeSerializer(many=True, read_only=True)
+    active = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = ProgramOutcomeSet
+        fields = [
+            "id",
+            "program",
+            "version",
+            "status",
+            "active",
+            "effective_date",
+            "source_reference",
+            "activated_at",
+            "activated_by",
+            "outcomes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "version",
+            "status",
+            "active",
+            "activated_at",
+            "activated_by",
+            "outcomes",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class ProgramOutcomeSetActivateSerializer(serializers.Serializer):
+    effective_date = serializers.DateField(required=False)
+
+
 class GradeSerializer(serializers.ModelSerializer):
     assessment_title = serializers.CharField(source="assessment.title", read_only=True)
     batch_name = serializers.CharField(source="batch.name", read_only=True)
@@ -208,13 +354,6 @@ class GradeSerializer(serializers.ModelSerializer):
             "version",
             "updated_at",
         )
-        read_only_fields = fields
-
-
-class AssessmentSerializer(AcademicSerializer):
-    class Meta:
-        model = Assessment
-        fields = ("id", "offering", "title", "points_possible", "status")
         read_only_fields = fields
 
 
@@ -261,54 +400,3 @@ class GradeBatchSerializer(serializers.ModelSerializer):
         model = GradeBatch
         fields = ("id", "offering", "name", "released_at", "created_at")
         read_only_fields = ("id", "released_at", "created_at")
-
-
-class ProgramOutcomeSerializer(AcademicSerializer):
-    class Meta:
-        model = ProgramOutcome
-        fields = [
-            "id",
-            "outcome_set",
-            "code",
-            "label",
-            "description",
-            "source_url",
-            "ordering",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
-class ProgramOutcomeSetSerializer(AcademicSerializer):
-    outcomes = ProgramOutcomeSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = ProgramOutcomeSet
-        fields = [
-            "id",
-            "program",
-            "version",
-            "status",
-            "effective_date",
-            "source_reference",
-            "activated_at",
-            "activated_by",
-            "outcomes",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "version",
-            "status",
-            "activated_at",
-            "activated_by",
-            "outcomes",
-            "created_at",
-            "updated_at",
-        ]
-
-
-class ProgramOutcomeSetActivateSerializer(serializers.Serializer):
-    effective_date = serializers.DateField(required=False)

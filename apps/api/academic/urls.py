@@ -1,5 +1,4 @@
 from django.urls import path
-from rest_framework.routers import SimpleRouter
 
 from .controllers import (
     AcademicTermController,
@@ -20,9 +19,11 @@ from .controllers import (
     ProgramOutcomeController,
     ProgramOutcomeSetController,
     StudentWorkspaceController,
+    SyllabusController,
 )
+from .router import AcademicRouter
 
-router = SimpleRouter()
+router = AcademicRouter()
 router.register("institutions", InstitutionController, basename="institution")
 router.register("departments", DepartmentController, basename="department")
 router.register("programs", ProgramController, basename="program")
@@ -35,11 +36,16 @@ router.register(
     "instructor-assignments", InstructorAssignmentController, basename="instructor-assignment"
 )
 router.register("enrollments", EnrollmentController, basename="enrollment")
+router.register("po-sets", ProgramOutcomeSetController, basename="po-set")
+router.register("program-outcome-sets", ProgramOutcomeSetController, basename="program-outcome-set")
+router.register("program-outcomes", ProgramOutcomeController, basename="program-outcome")
+router.register("syllabi", SyllabusController, basename="syllabus")
 router.register("grade-batches", GradeBatchController, basename="grade-batch")
 router.register("grades", GradeController, basename="grade")
 router.register("assessments", AssessmentController, basename="assessment")
 router.register("program-outcome-sets", ProgramOutcomeSetController, basename="program-outcome-set")
 router.register("program-outcomes", ProgramOutcomeController, basename="program-outcome")
+
 
 urlpatterns = [
     path("workspaces/instructor/", InstructorWorkspaceController.as_view()),
