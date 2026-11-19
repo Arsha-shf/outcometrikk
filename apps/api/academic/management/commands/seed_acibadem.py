@@ -9,6 +9,7 @@ from pathlib import Path
 from access.models import InstitutionMembership, RoleAssignment
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
@@ -433,6 +434,14 @@ class Command(BaseCommand):
                 coord_users.append(u)
             coord_user = coord_users[0]
             self.stdout.write(f"Created/updated coordinator: {coord_user.username}")
+
+            # Seed pilot program outcome set (OUT-01 PO1..PO11)
+            call_command(
+                "seed_program_outcomes",
+                program=program.code,
+                effective_date="2026-09-01",
+                actor=coord_user.username,
+            )
 
             # Instructors
             instructor_users = {}

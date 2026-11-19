@@ -29,3 +29,13 @@ def test_seed_credentials_and_existing_administrator_can_view_demo_dashboard(tmp
         "seed_acibadem", credentials_file=str(credentials), administrator=operator.username
     )
     assert client.get("/api/access/dashboard/", {"scope": scope}).status_code == 200
+
+    from academic.models import ProgramOutcomeSet
+
+    po_set = ProgramOutcomeSet.objects.filter(program__code="CSE", status="active").first()
+    assert po_set is not None
+    assert po_set.version == 1
+    assert po_set.outcomes.count() == 11
+    assert list(po_set.outcomes.order_by("ordering").values_list("code", flat=True)) == [
+        f"PO{i}" for i in range(1, 12)
+    ]

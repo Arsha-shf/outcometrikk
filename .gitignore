@@ -17,6 +17,5 @@ playwright-report/
 test-results/
 reports/
 /apps/web/.next
-
 *.tsbuildinfo
-
+.vscode/
