@@ -43,8 +43,6 @@ router.register("syllabi", SyllabusController, basename="syllabus")
 router.register("grade-batches", GradeBatchController, basename="grade-batch")
 router.register("grades", GradeController, basename="grade")
 router.register("assessments", AssessmentController, basename="assessment")
-router.register("program-outcome-sets", ProgramOutcomeSetController, basename="program-outcome-set")
-router.register("program-outcomes", ProgramOutcomeController, basename="program-outcome")
 
 
 urlpatterns = [
