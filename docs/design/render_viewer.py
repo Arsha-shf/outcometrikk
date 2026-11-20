@@ -4,8 +4,9 @@ Run from any directory. No dependency beyond Python's standard library.
 The copied template is retained locally; diagram edits belong in the D2 files.
 """
 
-import re
 from pathlib import Path
+import re
+
 
 ROOT = Path(__file__).resolve().parent
 

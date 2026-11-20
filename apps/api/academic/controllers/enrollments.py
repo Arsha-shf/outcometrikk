@@ -3,7 +3,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from ..decorators import controller, get, patch, post, require_permission, validate_payload
+from ..decorators import controller, get, patch, post, scoped_permission, validate_payload
 from ..models import CourseOffering
 from ..serializers import (
     EnrollmentSerializer,
@@ -58,13 +58,22 @@ class EnrollmentController(
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
-    @post()
-    @require_permission("offering.manage", scope_field="offering")
+    @post(
+        permission_classes=[
+            IsAuthenticated,
+            scoped_permission("offering.manage", scope_field="offering"),
+        ]
+    )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @patch("{id}")
-    @require_permission("grades.edit", scope_field="offering")
+    @patch(
+        "{id}",
+        permission_classes=[
+            IsAuthenticated,
+            scoped_permission("grades.edit", scope_field="offering"),
+        ],
+    )
     @validate_payload(EnrollmentStatusUpdateSerializer)
     def partial_update(self, request, *args, payload=None, **kwargs):
         enrollment = self.get_object()
@@ -76,20 +85,38 @@ class EnrollmentController(
         )
         return Response(self.get_serializer(updated).data)
 
-    @get("import/template", url_name="import-template")
-    @require_permission("offering.manage", scope_field="offering")
+    @get(
+        "import/template",
+        url_name="import-template",
+        permission_classes=[
+            IsAuthenticated,
+            scoped_permission("offering.manage", scope_field="offering"),
+        ],
+    )
     def import_template(self, request, *args, **kwargs):
         offering = get_object_or_404(CourseOffering, pk=request.query_params.get("offering"))
         return Response(self.import_service.template_payload(offering=offering))
 
-    @post("import/preview", url_name="import-preview")
-    @require_permission("offering.manage", scope_field="offering")
+    @post(
+        "import/preview",
+        url_name="import-preview",
+        permission_classes=[
+            IsAuthenticated,
+            scoped_permission("offering.manage", scope_field="offering"),
+        ],
+    )
     @validate_payload(RosterImportPreviewSerializer)
     def import_preview(self, request, *args, payload=None, **kwargs):
         return Response(self.import_service.preview(**payload))
 
-    @post("import/apply", url_name="import-apply")
-    @require_permission("offering.manage", scope_field="offering")
+    @post(
+        "import/apply",
+        url_name="import-apply",
+        permission_classes=[
+            IsAuthenticated,
+            scoped_permission("offering.manage", scope_field="offering"),
+        ],
+    )
     @validate_payload(RosterImportApplySerializer)
     def import_apply(self, request, *args, payload=None, **kwargs):
         try:

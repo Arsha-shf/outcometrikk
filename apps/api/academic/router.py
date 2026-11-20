@@ -118,6 +118,11 @@ class AcademicRouter(SimpleRouter):
                 combined_mapping.update(route_item.mapping)
                 combined_initkwargs = dict(existing_route.initkwargs)
                 combined_initkwargs.update(route_item.initkwargs)
+                # When multiple verbs share a URL (e.g. GET + POST on `{id}/learning-outcomes`),
+                # never let one verb's `permission_classes` overwrite the other verb in initkwargs;
+                # `_install_action_permissions` resolves each action's own `permission_classes`
+                # dynamically via `get_permissions()`.
+                combined_initkwargs.pop("permission_classes", None)
 
                 merged_route = Route(
                     url=existing_route.url,
@@ -137,6 +142,34 @@ class AcademicRouter(SimpleRouter):
 academic_router = AcademicRouter()
 
 
+def _install_action_permissions(cls: type) -> None:
+    """Wire per-action `permission_classes` into DRF's native `get_permissions()`.
+
+    Works for both DRF `@action(permission_classes=...)` sub-routes AND root/detail
+    methods decorated with `@get(..., permission_classes=[...])`, `@post(...)`,
+    `@put(...)`, `@patch(...)`, `@delete(...)` (or legacy `_drf_permission_classes`).
+    """
+    if not hasattr(cls, "get_permissions") or getattr(cls, "_action_permissions_installed", False):
+        return
+
+    original_get_permissions = cls.get_permissions
+
+    def get_permissions(self):
+        action_name = getattr(self, "action", None)
+        if not action_name:
+            req = getattr(self, "request", None)
+            action_name = getattr(req, "method", "").lower() if req is not None else None
+        handler = getattr(type(self), action_name, None) if action_name else None
+
+        route_classes = getattr(handler, "_route_permission_classes", None) if handler else None
+        if route_classes is not None:
+            return [perm_cls() for perm_cls in route_classes]
+        return original_get_permissions(self)
+
+    cls.get_permissions = get_permissions
+    cls._action_permissions_installed = True
+
+
 def controller(
     prefix: str,
     *,
@@ -145,11 +178,12 @@ def controller(
 ) -> Callable[[type], type]:
     """Class decorator that registers a controller with the routing system.
 
-    Analogous to NestJS `@Controller('path')`.
-    Registers DRF ViewSets with the router, or APIViews as standalone endpoints.
+    Registers DRF ViewSets with the router, or APIViews as standalone endpoints,
+    and wires any per-action DRF permission classes into `get_permissions()`.
     """
 
     def decorator(cls: type) -> type:
+        _install_action_permissions(cls)
         target_router = router or academic_router
         target_router.register_controller(prefix, cls, basename=basename)
         cls._controller_prefix = prefix
@@ -174,14 +208,16 @@ def route(
     path_suffix: str = "",
     *,
     detail: bool = False,
+    permission_classes: list[type] | tuple[type, ...] | None = None,
     **action_kwargs: Any,
 ) -> Callable:
     """Action route decorator analogous to NestJS `@Get()`, `@Post()`, etc.
 
     Supports:
     - Root collection: `@get()`, `@post()` (or `@get("")`, `@post("")`)
-    - Detail instance: `@get("{id}")`, `@patch("{id}")`, `@get(detail=True)`
+    - Detail instance: `@get("{id}")`, `@put("{id}")`, `@patch("{id}")`, `@get(detail=True)`
     - Sub-resources: `@get("stats")`, `@post("{id}/approve")`, `@post("approve", detail=True)`
+    - Native DRF per-route `permission_classes=[IsAuthenticated, scoped_permission(...)]`
     """
     from rest_framework.decorators import action
 
@@ -193,7 +229,13 @@ def route(
             "path": clean_path,
             "detail": is_detail,
         }
+        if permission_classes is not None:
+            func._route_permission_classes = tuple(permission_classes)
         if clean_path:
+            # Pass permission_classes straight into DRF's @action as well (unless merged
+            # with another verb on the same path, where get_permissions() resolves per-action).
+            if permission_classes is not None:
+                action_kwargs["permission_classes"] = list(permission_classes)
             return action(
                 detail=is_detail,
                 methods=[method.lower()],
