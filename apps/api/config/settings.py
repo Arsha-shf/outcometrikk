@@ -72,6 +72,9 @@ WIREUP = WireupSettings(
         "academic.services.calculations",
         "academic.services.publications",
         "academic.services.analytics",
+        "academic.services.grade_import",
+        "academic.services.roster_import",
+        "academic.services.workspaces",
     ],
     auto_inject_views=False,
 )

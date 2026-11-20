@@ -374,3 +374,14 @@ published data only through a `PublicationReader` (`reports/readers.py`), backed
 `AcademicPublicationReader` (using `CALC-03` publications and `ANA-01` cohort analytics).
 `REPORT_EXPORT_MAX_ROWS` (default 5000) bounds synchronous exports. PDFs use ReportLab and its
 bundled fonts, so no system fonts or libraries are needed.
+
+## Roster CSV import (ROST-01)
+
+`GET /api/v1/enrollments/import/template/?offering={id}`, `POST /api/v1/enrollments/import/preview/`,
+and `POST /api/v1/enrollments/import/apply/` allow staff with `offering.manage` on an active offering
+to preview and atomically enroll eligible program students from a UTF-8 CSV (`student_identifier`
+column; 1 MB / 2,000 rows max). Preview writes nothing and returns `file_checksum`,
+`roster_fingerprint`, and `expected_input_revision`; apply rechecks those under a row lock (returning
+`409 stale_preview` on drift), enrolls valid rows atomically through `EnrollmentService.create`,
+reports skipped duplicate/invalid rows, emits a `roster.csv_imported` audit event, and sets
+`Cache-Control: no-store`. See [`docs/plan/ROST-01-roster-import.md`](../../docs/plan/ROST-01-roster-import.md).

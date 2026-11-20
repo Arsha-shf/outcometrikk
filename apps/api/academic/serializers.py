@@ -727,3 +727,23 @@ class PublicationCreateSerializer(serializers.Serializer):
         if not cleaned:
             raise serializers.ValidationError("This field may not be blank.")
         return cleaned
+
+
+class RosterImportPreviewSerializer(serializers.Serializer):
+    offering = serializers.PrimaryKeyRelatedField(queryset=CourseOffering.objects.all())
+    csv_text = serializers.CharField(allow_blank=True, trim_whitespace=False)
+    filename = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+
+
+class RosterImportApplySerializer(RosterImportPreviewSerializer):
+    file_checksum = serializers.CharField(max_length=64)
+    roster_fingerprint = serializers.CharField(max_length=64)
+    expected_input_revision = serializers.IntegerField(
+        min_value=0, required=False, allow_null=True, default=None
+    )
+
+    def validate_file_checksum(self, value: str) -> str:
+        cleaned = value.strip().lower()
+        if not cleaned:
+            raise serializers.ValidationError("This field may not be blank.")
+        return cleaned
