@@ -16,15 +16,25 @@ from wireup import injectable
 
 from ..models import CourseOffering, Enrollment, ProgramMembership
 from .enrollments import EnrollmentService
-from .grade_import import compute_csv_checksum, sanitize_filename
+from .grade_import import compute_csv_checksum, escape_csv_formula, sanitize_filename
 
 MAX_ROSTER_BYTES = 1 * 1024 * 1024  # 1 MB UTF-8
 MAX_ROSTER_ROWS = 2_000
 REQUIRED_COLUMNS = ("student_identifier",)
 ALL_COLUMNS = REQUIRED_COLUMNS
+DEFAULT_ROSTER_FILENAME = "roster.csv"
 
 # Row error codes that mean "already handled", not "bad data".
 DUPLICATE_CODES = frozenset({"duplicate_row", "already_enrolled"})
+
+
+def _sanitize_roster_filename(filename: str) -> str:
+    if not filename or not filename.strip():
+        return DEFAULT_ROSTER_FILENAME
+    cleaned = sanitize_filename(filename)
+    if cleaned == "grades.csv" and "grades.csv" not in filename.lower():
+        return DEFAULT_ROSTER_FILENAME
+    return cleaned
 
 
 def _normalize(csv_text: str) -> str:
@@ -73,7 +83,7 @@ class RosterImportService:
             .order_by("student_number")
             .first()
         )
-        sample = candidate.student_number if candidate else "S1001"
+        sample = escape_csv_formula(candidate.student_number) if candidate else "S1001"
         return {
             "offering_id": str(offering.pk),
             "columns": list(ALL_COLUMNS),
@@ -236,7 +246,7 @@ class RosterImportService:
 
         return {
             "offering": str(offering.pk),
-            "sanitized_filename": sanitize_filename(filename),
+            "sanitized_filename": _sanitize_roster_filename(filename),
             "file_checksum": compute_csv_checksum(csv_text),
             "roster_fingerprint": compute_roster_fingerprint(offering),
             "expected_input_revision": offering.input_revision,

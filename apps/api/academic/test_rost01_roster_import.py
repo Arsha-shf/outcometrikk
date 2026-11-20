@@ -330,3 +330,80 @@ def test_scoped_authorization_denies_unauthorized_actors(roster_world):
         assert client.post(APPLY, payload, format="json").status_code == 403
 
     assert Enrollment.objects.filter(offering=offering).count() == 1
+
+
+def test_bom_crlf_default_filename_and_no_store_headers(roster_world):
+    offering = roster_world["offering"]
+    client = _client_for(roster_world["coordinator"])
+    bom_csv = "\ufeffstudent_identifier\r\nR1001\r\n"
+
+    tmpl = client.get(f"{TEMPLATE}?offering={offering.pk}")
+    assert tmpl.status_code == 200
+    assert tmpl["Cache-Control"] == "no-store"
+
+    preview_resp = client.post(
+        PREVIEW,
+        {"offering": str(offering.pk), "csv_text": bom_csv, "filename": ""},
+        format="json",
+    )
+    assert preview_resp.status_code == 200
+    assert preview_resp["Cache-Control"] == "no-store"
+    preview = preview_resp.json()
+    assert preview["sanitized_filename"] == "roster.csv"
+    assert preview["valid_rows"] == 1
+    assert preview["can_apply"] is True
+
+    apply_resp = client.post(
+        APPLY,
+        {
+            "offering": str(offering.pk),
+            "csv_text": bom_csv,
+            "file_checksum": preview["file_checksum"],
+            "roster_fingerprint": preview["roster_fingerprint"],
+            "expected_input_revision": preview["expected_input_revision"],
+            "filename": "",
+        },
+        format="json",
+    )
+    assert apply_resp.status_code == 201
+    assert apply_resp["Cache-Control"] == "no-store"
+    assert apply_resp.json()["sanitized_filename"] == "roster.csv"
+
+
+def test_preview_flags_inactive_student_and_extra_columns(roster_world):
+    offering = roster_world["offering"]
+    client = _client_for(roster_world["coordinator"])
+    s1 = roster_world["s1"]
+    s1.is_active = False
+    s1.save(update_fields=["is_active"])
+
+    csv_text = "student_identifier\nR1001\nrost_s2,unexpected_extra\n"
+    resp = _preview(client, offering, csv_text)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["valid_rows"] == 0
+    assert data["invalid_rows"] == 2
+    assert data["can_apply"] is False
+    codes = {e["code"] for e in data["errors"]}
+    assert {"inactive_student", "extra_columns"} <= codes
+
+
+def test_template_escapes_formula_prefix_student_number(roster_world):
+    offering = roster_world["offering"]
+    client = _client_for(roster_world["coordinator"])
+    ProgramMembership.objects.filter(program=offering.program, user=roster_world["s1"]).update(
+        student_number="=CMD"
+    )
+    # Ensure s1 is ordered first by student_number ('=' < 'R')
+    resp = client.get(f"{TEMPLATE}?offering={offering.pk}")
+    assert resp.status_code == 200
+    assert resp.json()["sample_csv"] == "student_identifier\n'=CMD\n"
+
+
+def test_preview_rejects_non_active_offering(roster_world):
+    offering = roster_world["offering"]
+    offering.status = CourseOffering.Status.ARCHIVED
+    offering.save(update_fields=["status"])
+    resp = _preview(_client_for(roster_world["coordinator"]), offering)
+    assert resp.status_code == 400
+    assert "not active" in str(resp.json())
