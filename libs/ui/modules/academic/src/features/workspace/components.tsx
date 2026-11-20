@@ -44,6 +44,7 @@ import {
   getInstructorWorkspace,
   getStudentWorkspace,
 } from './api';
+import { RosterCsvImportDialog } from './roster-import';
 import {
   InstructorGradebook,
   StudentGradeSummary,
@@ -412,12 +413,18 @@ export function CoordinatorAcademicOverview({ children }: { children?: ReactNode
                           <Badge variant="outline">
                             {offering.enrolled} enrolled
                           </Badge>
-                          <SyllabusWorkspace
-                            offering={offering.id}
-                            programId={program.id}
-                            canDraft
-                            canApprove
-                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <RosterCsvImportDialog
+                              offeringId={offering.id}
+                              offeringLabel={`${offering.label} · ${offering.term}`}
+                            />
+                            <SyllabusWorkspace
+                              offering={offering.id}
+                              programId={program.id}
+                              canDraft
+                              canApprove
+                            />
+                          </div>
                         </li>
                       ))}
                   </ul>

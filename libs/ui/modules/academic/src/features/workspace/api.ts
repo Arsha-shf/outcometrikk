@@ -83,3 +83,207 @@ export async function getStudentWorkspace(signal?: AbortSignal) {
     throw new ApiError('unexpected', 200);
   return { courses: data.courses, outcomes: data.outcomes };
 }
+
+export interface RosterImportTemplate {
+  offering_id: string;
+  columns: string[];
+  required_columns: string[];
+  max_bytes: number;
+  max_rows: number;
+  sample_csv: string;
+}
+
+export interface RosterImportRowError {
+  row_number: number;
+  column: string;
+  code: string;
+  message: string;
+}
+
+export type RosterImportRowAction = 'enroll' | 'duplicate' | 'invalid';
+
+export interface RosterImportPreviewRow {
+  row_number: number;
+  student_identifier: string;
+  student_id: string | null;
+  action: RosterImportRowAction;
+  errors: RosterImportRowError[];
+}
+
+export interface RosterImportPreviewReport {
+  offering: string;
+  sanitized_filename: string;
+  file_checksum: string;
+  roster_fingerprint: string;
+  expected_input_revision: number;
+  total_rows: number;
+  valid_rows: number;
+  duplicate_rows: number;
+  invalid_rows: number;
+  can_apply: boolean;
+  errors: RosterImportRowError[];
+  rows: RosterImportPreviewRow[];
+}
+
+export interface RosterImportSkippedRow {
+  row_number: number;
+  student_identifier: string;
+  action: 'duplicate' | 'invalid';
+  errors: RosterImportRowError[];
+}
+
+export interface RosterImportApplyResult {
+  offering: string;
+  file_checksum: string;
+  sanitized_filename: string;
+  total_rows: number;
+  enrolled_count: number;
+  duplicate_count: number;
+  invalid_count: number;
+  skipped_rows: RosterImportSkippedRow[];
+  resulting_input_revision: number;
+}
+
+export interface RosterImportPreviewRequest {
+  offering: string;
+  csv_text: string;
+  filename?: string;
+}
+
+export interface RosterImportApplyRequest {
+  offering: string;
+  csv_text: string;
+  file_checksum: string;
+  roster_fingerprint: string;
+  expected_input_revision?: number;
+  filename?: string;
+}
+
+const ROSTER_ACTIONS = new Set<RosterImportRowAction>(['enroll', 'duplicate', 'invalid']);
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isRosterImportRowError(value: unknown): value is RosterImportRowError {
+  return (
+    isRecord(value) &&
+    typeof value.row_number === 'number' &&
+    typeof value.column === 'string' &&
+    typeof value.code === 'string' &&
+    typeof value.message === 'string'
+  );
+}
+
+function isRosterImportRowAction(value: unknown): value is RosterImportRowAction {
+  return typeof value === 'string' && ROSTER_ACTIONS.has(value as RosterImportRowAction);
+}
+
+function isRosterImportTemplate(value: unknown): value is RosterImportTemplate {
+  return (
+    isRecord(value) &&
+    typeof value.offering_id === 'string' &&
+    isStringArray(value.columns) &&
+    isStringArray(value.required_columns) &&
+    typeof value.max_bytes === 'number' &&
+    typeof value.max_rows === 'number' &&
+    typeof value.sample_csv === 'string'
+  );
+}
+
+function isRosterImportPreviewRow(value: unknown): value is RosterImportPreviewRow {
+  return (
+    isRecord(value) &&
+    typeof value.row_number === 'number' &&
+    typeof value.student_identifier === 'string' &&
+    (typeof value.student_id === 'string' || value.student_id === null) &&
+    isRosterImportRowAction(value.action) &&
+    Array.isArray(value.errors) &&
+    value.errors.every(isRosterImportRowError)
+  );
+}
+
+function isRosterImportPreviewReport(value: unknown): value is RosterImportPreviewReport {
+  return (
+    isRecord(value) &&
+    typeof value.offering === 'string' &&
+    typeof value.sanitized_filename === 'string' &&
+    typeof value.file_checksum === 'string' &&
+    typeof value.roster_fingerprint === 'string' &&
+    typeof value.expected_input_revision === 'number' &&
+    typeof value.total_rows === 'number' &&
+    typeof value.valid_rows === 'number' &&
+    typeof value.duplicate_rows === 'number' &&
+    typeof value.invalid_rows === 'number' &&
+    typeof value.can_apply === 'boolean' &&
+    Array.isArray(value.errors) &&
+    value.errors.every(isRosterImportRowError) &&
+    Array.isArray(value.rows) &&
+    value.rows.every(isRosterImportPreviewRow)
+  );
+}
+
+function isRosterImportSkippedRow(value: unknown): value is RosterImportSkippedRow {
+  return (
+    isRecord(value) &&
+    typeof value.row_number === 'number' &&
+    typeof value.student_identifier === 'string' &&
+    (value.action === 'duplicate' || value.action === 'invalid') &&
+    Array.isArray(value.errors) &&
+    value.errors.every(isRosterImportRowError)
+  );
+}
+
+function isRosterImportApplyResult(value: unknown): value is RosterImportApplyResult {
+  return (
+    isRecord(value) &&
+    typeof value.offering === 'string' &&
+    typeof value.file_checksum === 'string' &&
+    typeof value.sanitized_filename === 'string' &&
+    typeof value.total_rows === 'number' &&
+    typeof value.enrolled_count === 'number' &&
+    typeof value.duplicate_count === 'number' &&
+    typeof value.invalid_count === 'number' &&
+    Array.isArray(value.skipped_rows) &&
+    value.skipped_rows.every(isRosterImportSkippedRow) &&
+    typeof value.resulting_input_revision === 'number'
+  );
+}
+
+export async function getRosterImportTemplate(offeringId: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ offering: offeringId });
+  const data: unknown = await request(`/api/v1/enrollments/import/template/?${params}`, {
+    signal,
+    cache: 'no-store',
+  });
+  if (!isRosterImportTemplate(data)) throw new ApiError('unexpected', 200);
+  return data;
+}
+
+export async function previewRosterImport(
+  payload: RosterImportPreviewRequest,
+  signal?: AbortSignal,
+) {
+  const data: unknown = await request('/api/v1/enrollments/import/preview/', {
+    method: 'POST',
+    body: payload,
+    signal,
+    cache: 'no-store',
+  });
+  if (!isRosterImportPreviewReport(data)) throw new ApiError('unexpected', 200);
+  return data;
+}
+
+export async function applyRosterImport(
+  payload: RosterImportApplyRequest,
+  signal?: AbortSignal,
+) {
+  const data: unknown = await request('/api/v1/enrollments/import/apply/', {
+    method: 'POST',
+    body: payload,
+    signal,
+    cache: 'no-store',
+  });
+  if (!isRosterImportApplyResult(data)) throw new ApiError('unexpected', 201);
+  return data;
+}
