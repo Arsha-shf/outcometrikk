@@ -24,9 +24,9 @@ Honor API/domain ownership, scoped authorization, explicit null/error states, an
 
 ## Implementation tasks
 
-- [ ] Define CSV contract and limits; validate program/offering scope; duplicate detection; atomic apply; audit; tests.
-- [ ] Add focused automated tests for success, failure, and scope denial.
-- [ ] Document contract and update dependent stories.
+- [x] Define CSV contract and limits; validate program/offering scope; duplicate detection; atomic apply; audit; tests.
+- [x] Add focused automated tests for success, failure, and scope denial.
+- [x] Document contract and update dependent stories.
 
 
 ## Contract (implemented)
